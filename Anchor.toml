@@ -1,13 +1,19 @@
 [toolchain]
-anchor_version = "0.31.1"
+anchor_version = "1.2.2"
 
 [features]
 resolution = true
 skip-lint = false
 
 [programs.localnet]
-pqc_solana_wallet = "Fg6PaFpoGXkYsidMpWxTWqkZ7FEfcYkgMQHGsZPJGmGy"
+wallet = "5cLePo1rLF2qCp7Y9B6JByZjrtosDBYBtfBqv8tCjQSm"
 
 [provider]
-cluster = "Localnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
+
+[workspace]
+members = ["programs/wallet"]
+
+[scripts]
+test = "npm test"

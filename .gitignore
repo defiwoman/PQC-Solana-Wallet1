@@ -1,4 +1,4 @@
-# Secrets and local configuration
+# Local secrets; safe templates may be committed.
 .env
 .env.*
 !.env.example
@@ -6,11 +6,19 @@
 *.key
 *.p12
 *.pfx
-# Generated Solana signing keys
+secrets/
+# Generated signing material. Never ignore Cargo.lock or package-lock.json.
 **/*keypair*.json
 **/id.json
+**/wallet.json
+**/validator-keypair.json
+**/payer.json
+**/authority.json
+keys/
+.solana/
 .anchor/
-# Dependencies and outputs
+test-ledger/
+# Dependencies and build/test outputs at any workspace level.
 node_modules/
 target/
 dist/

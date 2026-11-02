@@ -1,25 +1,32 @@
 {
-  "name": "pqc-solana-wallet",
+  "name": "pqc-solana-wallet-foundation",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": {
-    "dev": "vite --host 0.0.0.0",
-    "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build",
-    "preview": "vite preview",
-    "check:program": "cargo check --manifest-path programs/pqc-solana-wallet/Cargo.toml",
-    "build:program": "anchor build"
+  "packageManager": "npm@11.9.0",
+  "engines": {
+    "node": ">=24.19.0 <25"
   },
-  "dependencies": {
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+  "workspaces": [
+    "packages/sdk",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run build:sdk && npm run dev --workspace @pqc-wallet/web",
+    "build:sdk": "npm run build --workspace @pqc-wallet/sdk",
+    "typecheck": "npm run build:sdk && tsc --noEmit",
+    "build": "npm run typecheck && npm run build --workspace @pqc-wallet/web",
+    "test": "npm run build:sdk && tsx --test tests/*.test.ts tests/*.test.tsx",
+    "check:program": "cargo check --locked -p wallet",
+    "test:program": "cargo test --locked -p wallet",
+    "build:program": "npm run build:program:sbf && npm run build:program:idl",
+    "build:program:sbf": "anchor build --no-idl --tools-version v1.57 -- --jobs 3 -- --locked",
+    "build:program:idl": "anchor idl build --program-name wallet --out target/wallet.json --out-ts target/wallet.ts -- --locked --jobs 3"
   },
   "devDependencies": {
-    "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
-    "@vitejs/plugin-react": "^4.7.0",
-    "typescript": "~5.9.3",
-    "vite": "^6.4.1"
+    "@anchor-lang/cli": "1.2.2",
+    "@types/node": "24.19.2",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
   }
 }
