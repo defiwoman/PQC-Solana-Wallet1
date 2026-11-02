@@ -13,7 +13,11 @@ const PUBLIC_GENESIS = [
   'EtWTRABZaYq6iMfeYKouRu166VU2xqa1', // devnet
   '4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQ', // testnet prefix
 ];
-export interface Network { endpoint: string; genesis: string }
+export const LEGACY_LOADER = new PublicKey('BPFLoader2111111111111111111111111111111111');
+export const UPGRADEABLE_LOADER = new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111');
+export interface Deployment { kind: 'immutable' | 'upgradeable'; authority?: string; programData?: string; slot?: string }
+export interface Network { endpoint: string; genesis: string; deployment?: Deployment }
+export interface PendingReceipt { signature: string; endpoint: string; genesis: string; blockhash: string; lastValidBlockHeight: number }
 export interface SignerConnection {
   address: string;
   label: string;
@@ -28,7 +32,7 @@ export interface ProposalView {
   expirySlot: bigint; approvals: number; executed: boolean;
 }
 export interface Snapshot { vault: VaultView; proposals: ProposalView[]; slot: bigint }
-export interface Progress { phase: 'signing' | 'submitting' | 'confirming' | 'confirmed' | 'failed' | 'unknown'; message: string; signature?: string }
+export interface Progress { phase: 'signing' | 'submitting' | 'confirming' | 'confirmed' | 'failed' | 'unknown'; message: string; signature?: string; receipt?: PendingReceipt }
 
 export function parseU64(text: string, positive = false): bigint {
   if (!/^(0|[1-9][0-9]*)$/.test(text)) throw new Error('Enter a whole number of lamports, slots or nonce units. Decimals are not accepted.');
@@ -56,7 +60,7 @@ export function localEndpoint(endpoint: string): string {
 export function readClient(connection: Connection) {
   return new Program<Wallet>(idl as unknown as Wallet, { connection });
 }
-export async function verifyLocalNetwork(connection: Connection, expectedGenesis?: string): Promise<Network> {
+export async function verifyLocalNetwork(connection: Connection, expectedGenesis?: string, expectedDeployment?: Deployment): Promise<Network> {
   const endpoint = localEndpoint(connection.rpcEndpoint);
   const genesis = await connection.getGenesisHash();
   if (PUBLIC_GENESIS.some(prefix => genesis.startsWith(prefix)) || (expectedGenesis && genesis !== expectedGenesis)) {
@@ -64,7 +68,27 @@ export async function verifyLocalNetwork(connection: Connection, expectedGenesis
   }
   const program = await connection.getAccountInfo(WALLET_PROGRAM_ID, 'confirmed');
   if (!program?.executable) throw new Error('Vault program is not loaded on this local validator. Start the documented local fixture.');
-  return { endpoint, genesis };
+  let deployment: Deployment;
+  if (program.owner.equals(LEGACY_LOADER)) {
+    deployment = { kind: 'immutable' };
+  } else if (program.owner.equals(UPGRADEABLE_LOADER)) {
+    if (program.data.length !== 36 || program.data.readUInt32LE(0) !== 2) throw new Error('Invalid upgradeable Program account.');
+    const dataAddress = new PublicKey(program.data.subarray(4, 36));
+    const canonical = PublicKey.findProgramAddressSync([WALLET_PROGRAM_ID.toBuffer()], UPGRADEABLE_LOADER)[0];
+    if (!canonical.equals(dataAddress)) throw new Error('Noncanonical ProgramData relationship.');
+    const data = await connection.getAccountInfo(dataAddress, 'confirmed');
+    if (!data || !data.owner.equals(UPGRADEABLE_LOADER) || data.data.length < 45 || data.data.readUInt32LE(0) !== 3 || data.data[12] > 1) {
+      throw new Error('Invalid upgradeable ProgramData account.');
+    }
+    deployment = { kind: data.data[12] === 1 ? 'upgradeable' : 'immutable', programData: dataAddress.toBase58(),
+      slot: data.data.readBigUInt64LE(4).toString(), ...(data.data[12] === 1 ? { authority: new PublicKey(data.data.subarray(13, 45)).toBase58() } : {}) };
+  } else {
+    throw new Error('Unexpected program loader owner. Reverify the local program.');
+  }
+  if (expectedDeployment && (['kind', 'authority', 'programData', 'slot'] as const).some(field => expectedDeployment[field] !== deployment[field])) {
+    throw new Error('Program deployment or upgrade authority changed. Reverify its trust before signing.');
+  }
+  return { endpoint, genesis, deployment };
 }
 const exact = (value: number) => {
   if (!Number.isSafeInteger(value) || value < 0) throw new Error('RPC returned a balance outside the exact safe-integer range. No rounded balance will be shown.');
@@ -148,6 +172,7 @@ export async function collectSignatures(transaction: Transaction, signers: reado
     // Some wallets omit earlier signatures. Merge verified signatures on the fixed message.
     for (const entry of signed.signatures) if (entry.signature) transaction.addSignature(entry.publicKey, entry.signature);
   }
+  if (!Buffer.from(transaction.serializeMessage()).equals(message)) throw new Error('Complete signed message changed. Discard the signing round.');
   if (!transaction.verifySignatures(true)) throw new Error('All required initialization/transaction signatures must be present.');
   return transaction.serialize({ requireAllSignatures: true, verifySignatures: true });
 }
@@ -168,23 +193,32 @@ export function describeError(error: unknown): string {
 export class ConfirmedTransactionFailure extends Error {}
 export async function signatureStatus(connection: Connection, signature: string): Promise<'confirmed' | 'pending'> {
   const state = (await connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
-  if (state?.err) throw new ConfirmedTransactionFailure(describeError(state.err));
+  // A processed or merely confirmed error can disappear on a fork. Only a
+  // finalized landed failure may unlock a replacement payment.
+  if (state?.err) {
+    if (state.confirmationStatus === 'finalized') throw new ConfirmedTransactionFailure(describeError(state.err));
+    return 'pending';
+  }
   return state?.confirmationStatus === 'confirmed' || state?.confirmationStatus === 'finalized' ? 'confirmed' : 'pending';
 }
 export async function submitInstructions(connection: Connection, network: Network, instructions: TransactionInstruction[], signers: readonly SignerConnection[], progress: (state: Progress) => void, ensureCurrent = () => {}) {
   ensureCurrent();
   if (signers.length === 0) throw new Error('Connect a signing wallet.');
-  await verifyLocalNetwork(connection, network.genesis);
+  await verifyLocalNetwork(connection, network.genesis, network.deployment);
   const latest = await connection.getLatestBlockhash('confirmed');
   const transaction = new Transaction({ ...latest, feePayer: new PublicKey(signers[0].address) }).add(...instructions);
   const bytes = await collectSignatures(transaction, signers, message => { ensureCurrent(); progress({ phase: 'signing', message }); });
-  await verifyLocalNetwork(connection, network.genesis);
+  await verifyLocalNetwork(connection, network.genesis, network.deployment);
   if (!(await connection.isBlockhashValid(latest.blockhash, { commitment: 'confirmed' })).value) {
     throw new Error('Signing blockhash expired. Rebuild the transaction and collect every signature again. Nothing was submitted.');
   }
   ensureCurrent();
   const signature = utils.bytes.bs58.encode(transaction.signature!);
-  progress({ phase: 'submitting', message: 'Submitting signed transaction to the local validator.', signature });
+  const receipt: PendingReceipt = { signature, endpoint: localEndpoint(connection.rpcEndpoint), genesis: network.genesis,
+    blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight };
+  // The application persists this PUBLIC receipt synchronously in the callback.
+  // If persistence fails, this call throws before sendRawTransaction is reached.
+  progress({ phase: 'submitting', message: 'Submitting signed transaction to the local validator.', signature, receipt });
   try {
     const result = await connection.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 0 });
     if (result !== signature) throw new Error('RPC returned an unexpected transaction signature.');
@@ -200,7 +234,7 @@ export async function submitInstructions(connection: Connection, network: Networ
   try {
     for (let attempt = 0; attempt < 150; attempt++) {
       if (await signatureStatus(connection, signature) === 'confirmed') {
-        progress({ phase: 'confirmed', message: 'Transaction confirmed by the local validator.', signature });
+        progress({ phase: 'confirmed', message: 'Transaction confirmed by the local validator.', signature, receipt });
         return;
       }
       await new Promise(resolve => setTimeout(resolve, 200));

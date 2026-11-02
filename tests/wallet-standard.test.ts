@@ -6,7 +6,7 @@ import { signerFor, type WalletIdentity } from '../apps/web/src/wallets';
 test('Wallet Standard rejects unsupported networks and disconnected accounts', async () => {
   const account = { address: '11111111111111111111111111111111', chains: ['solana:devnet'], features: ['solana:signTransaction'] };
   const wallet = { accounts: [account], chains: ['solana:devnet'], features: {
-    'solana:signTransaction': { supportedTransactionVersions: ['legacy'], signTransaction: async () => [] },
+    'solana:signTransaction': { version: '1.0.0', supportedTransactionVersions: ['legacy'], signTransaction: async () => [] },
   } };
   const identity = { id: 'fixture', address: account.address, label: 'Public test metadata', wallet, account } as unknown as WalletIdentity;
   assert.throws(() => signerFor(identity), /Wrong network/);
@@ -15,5 +15,5 @@ test('Wallet Standard rejects unsupported networks and disconnected accounts', a
   await assert.rejects(signer.sign(new Uint8Array()), /did not return/);
   wallet.accounts = [];
   assert.throws(() => signerFor(identity), /disconnected/);
-  await assert.rejects(signer.sign(new Uint8Array()), /account changed/);
+  await assert.rejects(signer.sign(new Uint8Array()), /disconnected or changed/);
 });

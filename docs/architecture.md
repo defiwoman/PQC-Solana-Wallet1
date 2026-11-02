@@ -121,14 +121,19 @@ bits; balances and execution state are reread after confirmation, not assumed.
 
 Wallet connections use Wallet Standard `standard:connect`, account-change events,
 and legacy `solana:signTransaction`. All three initialization identities must be
-connected, distinct and on-curve. Owner 1 is the rent and transaction fee payer.
+distinct and on-curve. Public keys are fixed at review; each identity can be
+exposed by its wallet when requested, so account switching preserves earlier
+verified signatures. Owner 1 is the rent and transaction fee payer.
 The app sequentially collects and cryptographically verifies all three signatures
 on the same message, merging earlier verified signatures if a wallet omits them.
 Message alteration, missing signatures, rejected signing and expired blockhashes
-abort the round. It never broadcasts a partially signed initialization.
+abort the round. A final complete-message comparison precedes submission. A new
+blockhash always requires all three signatures again. It never broadcasts a partially signed initialization.
 
 All signing keys remain in external wallets. There is no app backend, seed-entry
-form, key generation/import or browser persistence. Test-only signing substitutes
+form or key generation/import. Partial signatures and transaction bytes are not
+persisted; only a public pending receipt is stored before broadcast for retry
+safety. Test-only signing substitutes
 run in Node memory and are not included in the web bundle. Three identities on
 one computer are explicitly labeled as demonstration, not independent devices.
 
@@ -142,7 +147,10 @@ or public-network write capability was added.
 
 Confirmation uses HTTP status polling. The signature is known before broadcast;
 an ambiguous submission/confirmation retains it and blocks new transactions until
-checked. Confirmed failures are distinguished from RPC uncertainty. An RPC read
+checked. Only finalized landed errors unlock a failure retry; processed and confirmed
+errors remain pending. Successful reporting uses confirmed commitment. Public
+receipts survive reload, and same-origin Web Locks serialize submissions. Neither
+mechanism provides global payment-intent deduplication across origins/devices. An RPC read
 failure clears current account displays instead of manufacturing zero balances.
 See `frontend-walkthrough.md` for initialization details and manual wallet limits.
 
@@ -153,3 +161,12 @@ signature/key sizes, transaction/account limits, compute, memory, malformed inpu
 and reproducible verification vectors. No browser/server verification counts as
 that proof. Mandatory PQC authorization is conditional on feasibility passing,
 and must cover upgrade/recovery/rotation paths before making PQC claims.
+
+## Pre-devnet gate
+
+See `pre-devnet-review.md` for the current findings, warning classifications,
+manual wallet checklist and readiness decision. Program/ProgramData owners and
+canonical relationships are checked; upgrade authority and deployment slot are
+shown/pinned across signing. An upgrade authority can still replace this code and
+bypass its threshold. No devnet authority has been chosen and public writes remain
+disabled.

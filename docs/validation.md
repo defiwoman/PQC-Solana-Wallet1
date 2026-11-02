@@ -1,3 +1,25 @@
+# Pre-devnet review validation — 3 November 2026
+
+See [the review](pre-devnet-review.md) for findings, fixes, warning classifications,
+remaining limitations, required manual wallet tests and the **not yet ready for
+devnet** decision. No external wallet signing, merge or deployment was performed.
+
+- `npm run test:validator`: **21 real-program local-validator tests passed**, no
+  failures or skips, including competing execution/approval transactions.
+- `npm test`: **29 frontend/SDK tests passed**, no failures or skips. RPC/wallet
+  responses in this suite are fixtures; signatures use disposable Node-only keys.
+- `npm run build`: passed SDK, TypeScript and production frontend build. Existing
+  fs/process externalization and chunk-size warnings remain classified in review.
+- `npm run test:browser`: passed actual-account Chromium reads and public-receipt
+  reload/reconciliation; **not** an external-wallet signing test.
+- Rust program, ABI/IDL and SBF hash remain unchanged. Public-network writes remain
+  disabled. Loader/upgrade-authority metadata is now checked and shown; no devnet
+  upgrade policy was selected.
+
+Earlier dated results below are historical and describe their original versions.
+
+---
+
 # Classical vault interface validation — 2 November 2026
 
 ## Preservation and scope

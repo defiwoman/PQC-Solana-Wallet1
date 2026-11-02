@@ -65,12 +65,15 @@ computer running the browser.
 1. Click **Verify local network** with the local RPC URL. The interface checks
    the loopback URL, rejects known public-chain genesis hashes, verifies the
    program is executable, and displays the actual genesis hash and program ID.
-   It pins that genesis for subsequent actions.
+   It pins that genesis and the observed loader/deployment metadata for subsequent
+   actions. The upgrade-trust row reports any upgrade authority: that authority
+   can replace the vault rules regardless of the two-of-three approval policy.
 2. Configure compatible external wallets for the local validator. Connect the
-   wallets and expose three distinct authorization identities simultaneously.
-   If an account disappears when switching accounts, reconnect all required
-   identities before initializing. The app does not collect and save partial
-   initialization signatures for later account switches or other computers.
+   wallets. You may expose the three identities simultaneously, or enter their
+   three public addresses and switch to each account when its signature is
+   requested. Earlier verified signatures remain in memory on the same message;
+   the earlier account does not have to remain exposed. Reloading discards partial
+   signatures and always requires a fresh complete signing round.
 3. Copy each public address and fund it with local test SOL:
 
    ```sh
@@ -90,26 +93,31 @@ wallet/hardware connections, but physical-device behavior requires manual testin
 
 ## Initialize: how all three signatures are collected
 
-1. Select the three connected authorization identities in order. Enter an integer
+1. Enter the three authorization public keys in order (the connected-identity list can help). Enter an integer
    vault ID, such as `0`. The first key plus this ID determine the vault address.
 2. Click **Review initialization**. Check all three public keys, the derived vault
    address, network and program ID. Owner 1 will pay rent and the transaction fee.
 3. Click **Collect all 3 signatures and initialize**. The app constructs exactly
    one legacy transaction with the unchanged program's three required signer
-   accounts. Each selected wallet receives that same message in turn.
+   accounts. Each selected identity is requested in turn. Connect or switch to
+   the displayed public key, then click **Sign with requested identity**.
 4. Approve each external-wallet request. The app verifies the returned message
    bytes and Ed25519 signatures. Earlier valid signatures are retained even if
    a wallet returns only its own signature. A wallet may not alter the message.
 5. Only after all three signatures verify does the app serialize a fully signed
    transaction and submit it to the same verified local validator. It checks the
-   blockhash again first. A rejected signature, changed/disconnected identity,
+   blockhash again first. A rejected signature, unavailable requested identity,
    missing signature, message change or expired blockhash stops submission.
    Start a fresh signing round if the blockhash expires; there is no reduced
    two-signature initialization path.
 
 Signing material consists only of public keys, public transaction bytes and
-signatures in app memory. Private keys stay in external wallets. Neither signing
-sessions nor transactions are written to browser storage or an application server.
+signatures in app memory. Private keys stay in external wallets. Partial signatures
+and transaction bytes are never persisted. Before broadcast the app stores only a
+public receipt (signature, endpoint, genesis, blockhash and last valid height) so
+reloading cannot silently discard an unknown payment outcome. Writes require
+working localStorage and Web Locks on a secure localhost browser. Same-origin tabs
+share the submission lock; other profiles/origins/devices do not.
 
 After confirmation the interface loads the actual program-owned vault account.
 Its initial balance is the rent reserve, with zero spendable lamports. Creating
@@ -170,8 +178,12 @@ rather than displayed rounded.
   solana confirm TRANSACTION_SIGNATURE --url http://127.0.0.1:8899
   ```
 
-  The app does not automatically resubmit. Reloading clears in-memory history,
-  so verify an uncertain outcome before starting another payment.
+  The app does not automatically resubmit. Reloading restores an unresolved
+  public receipt and blocks new transactions. Verify the original RPC/genesis,
+  then check confirmation. Landed errors stay pending until finalized; processed
+  or merely confirmed errors do not enable retry. If the original ledger/history
+  is lost or the transaction never landed, preserve the receipt for manual ledger
+  reconciliation rather than deleting it to force another payment.
 
 ## Reproduce the checks
 
@@ -191,3 +203,5 @@ or signing fixture are injected into Chromium and no application backend is
 created. It does not certify external wallet extensions or hardware devices.
 
 See `validation.md` for observed results and remaining build warnings.
+
+Read `pre-devnet-review.md` before any devnet experiment; manual wallet tests and an upgrade-authority decision remain gates.

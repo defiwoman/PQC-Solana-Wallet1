@@ -24,10 +24,13 @@ for (let tries = 0; tries < 100; tries++) {
 }
 const id = BigInt(Date.now());
 const address = vaultAddress(owners[0].publicKey, id).toBase58();
+let latestReceipt;
 async function send(ix, selected) {
   let final;
   await submitInstructions(connection, network, [ix], selected, state => { final = state; });
   assert.equal(final?.phase, 'confirmed', final?.message);
+  latestReceipt = final.receipt;
+  assert(latestReceipt, 'SDK must return the public submission receipt');
 }
 await send(await initializeInstruction(connection, signers.map(signer => signer.address), id), signers);
 await send(await depositInstruction(connection, address, signers[0].address, 10_000_000n), [signers[0]]);
@@ -90,12 +93,23 @@ try {
   const state = await evaluate(`({ text: document.body.innerText, executeDisabled: [...document.querySelectorAll('button')].find(b => b.textContent === 'Execute proposal 0').disabled, stored: localStorage.length + sessionStorage.length })`);
   assert(state.executeDisabled); assert.equal(state.stored, 0); assert(state.text.includes(snapshot.proposals[0].recipient));
   await call('Page.captureScreenshot', { format: 'png' }, sessionId).then(result => writeFile(`${output}/page.png`, Buffer.from(result.data, 'base64')));
+  // Only PUBLIC receipt metadata enters the browser, never the Node fixture keys.
+  await evaluate(`localStorage.setItem('pqc-vault.public-pending.v1', ${JSON.stringify(JSON.stringify(latestReceipt))})`);
+  await call('Page.reload', {}, sessionId);
+  await waitFor("document.body.innerText.includes('Unresolved public receipt restored')");
+  await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Verify local network').click()");
+  await waitFor("document.body.innerText.includes('Verified local validator')");
+  assert(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Review initialization').disabled"));
+  await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Check transaction confirmation').click()");
+  await waitFor("document.body.innerText.includes('CONFIRMED')");
+  assert.equal(await evaluate('localStorage.length'), 0);
+  assert.equal(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Review initialization').disabled"), false);
   await evaluate("(() => { const input = [...document.querySelectorAll('label')].find(l => l.textContent.startsWith('Local RPC URL')).querySelector('input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'https://api.mainnet-beta.solana.com'); input.dispatchEvent(new Event('input', {bubbles:true})); })()");
   await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Verify local network').click()");
   await waitFor("document.body.innerText.includes('Wrong network')");
   assert.deepEqual(exceptions, [], 'Production page must not throw browser exceptions');
-  await writeFile(`${output}/result.json`, JSON.stringify({ passed: true, programUnchanged: true, address, balance: snapshot.vault.balance.toString(), approvals: 1, actualRPC: true, browser: 'system Chromium', externalWalletExtensionTested: false }, null, 2));
-  console.log('PASS: production Chromium page read the actual local vault balance and proposal; one-vote execution disabled; wrong-network URL rejected.');
+  await writeFile(`${output}/result.json`, JSON.stringify({ passed: true, programUnchanged: true, address, balance: snapshot.vault.balance.toString(), approvals: 1, actualRPC: true, pendingReceiptReloadChecked: true, browser: 'system Chromium', externalWalletExtensionTested: false }, null, 2));
+  console.log('PASS: production Chromium page read the actual local vault balance and proposal; one-vote execution disabled; public receipt survived reload and was reconciled; wrong-network URL rejected.');
   console.log('External wallet extensions were not automated; initialization signing was exercised with Node-only development fixtures.');
 } finally {
   socket?.close();

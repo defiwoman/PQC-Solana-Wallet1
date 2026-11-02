@@ -51,13 +51,17 @@ even though the vault/recipient/proposal writes roll back.
 
 The app receives only public keys, transaction bytes and signatures; signing keys
 remain in external wallets. It has no backend, seed/private-key input, key-file
-upload or persistent browser signing session. Wallet-provided names are labels,
+upload or persisted partial signing session. Only whitelisted public pending
+receipt metadata is stored before broadcast; reload restores its retry lock and
+same-origin Web Locks serialize submission. Wallet-provided names are labels,
 not proof of independent security. Three identities on one computer are visibly
 marked as a demonstration.
 
 All three initialization signatures must verify on one unchanged message before
 broadcast. The app rejects message-changing wallets and rebuilds from scratch
-when a signing blockhash expires. A wallet-account change invalidates the round.
+when a signing blockhash expires. Wallet account switching preserves earlier verified signatures on the unchanged
+message; only the currently requested identity is permitted to sign that turn.
+Late responses after cancellation are ignored.
 The browser checks each signer's actual signature, not a local approval flag.
 
 Local RPC URLs, public-genesis rejection, a pinned genesis and program-presence
@@ -68,7 +72,10 @@ local validator and disposable keys only. Never connect real funded wallets.
 RPC reads are the data source, with canonical account validation and no optimistic
 vote/balance changes. A failed read clears current account data. Ambiguous writes
 retain their signature and block automatic retry to avoid duplicate deposits.
-The app checks again before signing/submission; on-chain checks remain decisive
+Landed errors must be finalized before failure retry; merely processed or
+confirmed errors stay pending. Separate profiles/origins or cleared storage do not
+share payment-intent history. Unlanded/pruned/lost-history outcomes require manual
+reconciliation rather than an automatic expiry retry. The app checks again before signing/submission; on-chain checks remain decisive
 if displayed state becomes stale or proposals expire while a wallet prompt is open.
 
 ## Quantum limits and excluded work
@@ -88,3 +95,9 @@ or quantum security. The interface builds local-only transactions using external
 signers. Automated coverage includes the signing protocol and Chromium account
 reads, but not actual wallet-extension prompts or physical hardware devices.
 Use no real funds, real recovery phrases or production keys for this experiment.
+
+Upgrade authority is now displayed from validated loader metadata and observed
+metadata is pinned through signing. That detection is not governance: any retained
+upgrade authority can replace all vault authorization rules. See
+`pre-devnet-review.md` for the unresolved devnet authority decision and required
+real-wallet/device tests.

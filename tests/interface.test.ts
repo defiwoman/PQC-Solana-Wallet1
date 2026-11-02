@@ -3,7 +3,7 @@ import test from 'node:test';
 import { utils } from '@anchor-lang/core';
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction } from '@solana/web3.js';
 import { actionState, collectSignatures, describeError, initializeInstruction, localEndpoint, parseU64, submitInstructions,
-  verifyLocalNetwork, type SignerConnection, type Snapshot, type ProposalView, type Progress } from '@pqc-wallet/sdk/interface';
+  LEGACY_LOADER, verifyLocalNetwork, type SignerConnection, type Snapshot, type ProposalView, type Progress } from '@pqc-wallet/sdk/interface';
 
 // Development-only wallet fixtures. Secret keys exist only inside this Node test
 // process, never in the browser bundle, an app backend, files, logs or exports.
@@ -26,7 +26,7 @@ function signers(): SignerConnection[] {
 function connection(overrides: Record<string, unknown> = {}) {
   let sent = 0;
   const stub = { rpcEndpoint: 'http://127.0.0.1:8899', getGenesisHash: async () => 'private-local-genesis',
-    getAccountInfo: async () => ({ executable: true }),
+    getAccountInfo: async () => ({ executable: true, owner: LEGACY_LOADER, data: Buffer.alloc(0) }),
     getLatestBlockhash: async () => ({ blockhash: Keypair.generate().publicKey.toBase58(), lastValidBlockHeight: 100 }),
     isBlockhashValid: async () => ({ value: true }), sendRawTransaction: async () => { sent++; throw new TypeError('fetch failed'); },
     ...overrides } as unknown as Connection;
@@ -107,7 +107,7 @@ test('confirmation distinguishes a real failure from an uncertain RPC response',
       sendRawTransaction: async (bytes: Uint8Array) => utils.bytes.bs58.encode(Transaction.from(bytes).signature!),
       getSignatureStatuses: async () => {
         if (outcome === 'unknown') throw new Error('Unexpected RPC response body');
-        return { value: [{ confirmationStatus: 'confirmed', err: outcome === 'failed' ? { InstructionError: [0, { Custom: 6013 }] } : null }] };
+        return { value: [{ confirmationStatus: outcome === 'failed' ? 'finalized' : 'confirmed', err: outcome === 'failed' ? { InstructionError: [0, { Custom: 6013 }] } : null }] };
       },
     });
     await submitInstructions(stub.rpc, { endpoint: stub.rpc.rpcEndpoint, genesis: 'private-local-genesis' }, [(await fixture()).instruction], signers(), state => states.push(state));

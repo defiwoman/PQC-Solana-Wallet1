@@ -21,6 +21,7 @@ let client: ReturnType<typeof createWalletClient>;
 let vaultId = 1n;
 let transactionSequence = 0;
 const boundaryVault = vaultAddress(owners[0].publicKey, U64_MAX);
+const wrongProposal = proposalAddress(boundaryVault, 0n);
 const wrongOwnerVault = vaultAddress(owners[0].publicKey, U64_MAX - 1n);
 const bn = (n: bigint) => new BN(n.toString());
 
@@ -170,6 +171,13 @@ before(async () => {
     owners: owners.map(owner => owner.publicKey), vaultId: bn(U64_MAX - 1n), nextNonce: bn(0n),
   });
   await writeFile(resolve(runDirectory, 'wrong-owner.json'), JSON.stringify({ ...fixture(wrongData, SystemProgram.programId), pubkey: wrongOwnerVault.toBase58() }));
+  const wrongProposalData = await client.coder.accounts.encode('transferProposal', {
+    vault: boundaryVault, nonce: bn(0n), recipient: payer.publicKey, amount: bn(1n), expirySlot: bn(U64_MAX),
+    proposer: owners[0].publicKey, approvals: 0, executed: false,
+  });
+  await writeFile(resolve(runDirectory, 'wrong-proposal-owner.json'), JSON.stringify({
+    ...fixture(wrongProposalData, SystemProgram.programId), pubkey: wrongProposal.toBase58(),
+  }));
   const log = await open(resolve(runDirectory, 'validator.log'), 'w');
   validator = spawn('solana-test-validator', [
     '--reset', '--quiet', '--ledger', resolve(runDirectory, 'ledger'),
@@ -179,6 +187,7 @@ before(async () => {
     '--bpf-program', WALLET_PROGRAM_ID.toBase58(), binary,
     '--account', boundaryVault.toBase58(), resolve(runDirectory, 'nonce-boundary.json'),
     '--account', wrongOwnerVault.toBase58(), resolve(runDirectory, 'wrong-owner.json'),
+    '--account', wrongProposal.toBase58(), resolve(runDirectory, 'wrong-proposal-owner.json'),
   ], { stdio: ['ignore', log.fd, log.fd] });
   await log.close();
   let startupError: Error | undefined;
@@ -391,4 +400,65 @@ test('a later failure rolls back an earlier successful execution in the same tra
   // Retrying just the valid instruction succeeds, proving the failed tx did not consume it.
   await send([transfer]);
   assert.equal((await client.account.transferProposal.fetch(proposal)).executed, true);
+});
+
+
+function failures(results: PromiseSettledResult<string>[], code: string) {
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  const failed = results.find(result => result.status === 'rejected') as PromiseRejectedResult;
+  assert(failed.reason instanceof LandedFailure);
+  assert(failed.reason.logs.some((log: string) => log.includes(`Error Code: ${code}.`)), failed.reason.message);
+}
+
+test('concurrent execution transactions spend a proposal exactly once', async () => {
+  const vault = await funded(); const to = await recipient(); const proposal = await propose(vault, to);
+  await approveTwo(vault, proposal);
+  const source = await connection.getBalance(vault), destination = await connection.getBalance(to);
+  const ix = await execution(vault, proposal, to);
+  failures(await Promise.allSettled([send([ix]), send([ix])]), 'AlreadyExecuted');
+  assert.equal(await connection.getBalance(vault), source - 100_000);
+  assert.equal(await connection.getBalance(to), destination + 100_000);
+  assert.equal((await client.account.transferProposal.fetch(proposal)).executed, true);
+});
+
+test('competing approved proposals cannot jointly overspend; losing execution remains unconsumed', async () => {
+  const vault = await funded(); const to = await recipient();
+  const first = await propose(vault, to, 3_000_000n), second = await propose(vault, to, 3_000_000n);
+  await approveTwo(vault, first); await approveTwo(vault, second);
+  const before = [await client.account.transferProposal.fetch(first), await client.account.transferProposal.fetch(second)];
+  const source = await connection.getBalance(vault), destination = await connection.getBalance(to);
+  failures(await Promise.allSettled([send([await execution(vault, first, to, 3_000_000n)]), send([await execution(vault, second, to, 3_000_000n)])]), 'RentReserve');
+  const after = [await client.account.transferProposal.fetch(first), await client.account.transferProposal.fetch(second)];
+  assert.equal(after.filter(proposal => proposal.executed).length, 1);
+  for (let index = 0; index < 2; index++) {
+    const { executed: _old, ...immutableBefore } = before[index];
+    const { executed: _new, ...immutableAfter } = after[index];
+    assert.deepEqual(immutableAfter, immutableBefore);
+  }
+  assert.equal(await connection.getBalance(vault), source - 3_000_000);
+  assert.equal(await connection.getBalance(to), destination + 3_000_000);
+});
+
+test('concurrent repeated approvals cannot count the same owner twice', async () => {
+  const vault = await funded(); const to = await recipient(); const proposal = await propose(vault, to);
+  const ix = await approval(vault, proposal);
+  failures(await Promise.allSettled([send([ix], [owners[0]]), send([ix], [owners[0]])]), 'AlreadyApproved');
+  assert.equal((await client.account.transferProposal.fetch(proposal)).approvals, 1);
+  await unchangedFailure(vault, proposal, to, [await execution(vault, proposal, to)], [], 'InsufficientApprovals');
+});
+
+test('proposal owner and canonical PDA checks reject fabricated substitutions', async () => {
+  await rejected([await approval(boundaryVault, wrongProposal)], [owners[0]], 'AccountOwnedByWrongProgram');
+  const vault = await funded(); const to = await recipient();
+  const seeds = [Buffer.from('proposal'), vault.toBuffer(), u64LE(0n)];
+  const canonical = proposalAddress(vault, 0n); let alternate: PublicKey | undefined;
+  for (let bump = 255; bump >= 0; bump--) {
+    try { const candidate = PublicKey.createProgramAddressSync([...seeds, Buffer.from([bump])], WALLET_PROGRAM_ID); if (!candidate.equals(canonical)) { alternate = candidate; break; } } catch { /* invalid on-curve candidate */ }
+  }
+  assert(alternate);
+  const ix = await proposeInstruction(vault, 0n, to, 1n, U64_MAX);
+  for (const meta of ix.keys) if (meta.pubkey.equals(canonical)) meta.pubkey = alternate;
+  await rejected([ix], [owners[0]], 'ConstraintSeeds');
+  assert.equal((await client.account.vault.fetch(vault)).nextNonce.toString(), '0');
+  assert.equal(await connection.getAccountInfo(alternate), null);
 });

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Connection, PublicKey, type TransactionInstruction } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction, type TransactionInstruction } from '@solana/web3.js';
 import type { Wallet } from '@wallet-standard/base';
 import { DEVELOPMENT_STAGES, PROJECT_STATUS } from '@pqc-wallet/sdk';
 import { ConfirmedTransactionFailure, WALLET_PROGRAM_ID, approvalInstruction, depositInstruction, describeError, executeInstruction, formatSOL, initializeInstruction,
   loadSnapshot, localEndpoint, parseU64, proposalInstruction, signatureStatus, submitInstructions, validateOwners, vaultAddress, verifyLocalNetwork,
-  type Network, type Progress, type ProposalView, type Snapshot, type SignerConnection } from '@pqc-wallet/sdk/interface';
+  type Network, type Progress, type PendingReceipt, type Snapshot, type SignerConnection } from '@pqc-wallet/sdk/interface';
 import { connectWallet, disconnectWallet, discoverWallets, identities, signerFor, watchIdentityWallet, watchWallets, type WalletIdentity } from './wallets';
 import { ProposalCard } from './ProposalCard';
+import { TransactionJournal, PENDING_KEY, withTransactionLock } from './journal';
+import { SignatureQueue, type SignatureRequest } from './signing';
 
 export function TransactionStatus({ progress }: { progress?: Progress }) {
   if (!progress) return <p>No transaction submitted.</p>;
@@ -35,20 +37,45 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [progress, setProgress] = useState<Progress>();
+  const [signatureRequest, setSignatureRequest] = useState<SignatureRequest>();
+  const [walletBusy, setWalletBusy] = useState(false);
+  const [pendingReceipt, setPendingReceipt] = useState<PendingReceipt>();
+  const [journalBlocked, setJournalBlocked] = useState(false);
+  const journal = useRef<TransactionJournal | undefined>(undefined);
+  const pending = useRef<PendingReceipt | undefined>(undefined);
+  const actionInFlight = useRef(false);
+  const signatureQueue = useRef<SignatureQueue | undefined>(undefined);
+  if (!signatureQueue.current) signatureQueue.current = new SignatureQueue(setSignatureRequest);
   const [initReview, setInitReview] = useState<{ owners: string[]; vaultId: bigint; address: string }>();
   const generation = useRef(0);
   const refreshing = useRef(false);
   const dataRequest = useRef(0);
   const active = walletAccounts.find(account => account.id === activeId);
-  const unknown = progress?.phase === 'unknown';
-  const disabled = busy || unknown || !connection || !network;
+  const unknown = progress?.phase === 'unknown' || !!pendingReceipt;
+  const uncertainSignature = progress?.signature ?? pendingReceipt?.signature;
+  const disabled = busy || unknown || journalBlocked || !connection || !network;
+  useEffect(() => {
+    function restore() {
+      try {
+        journal.current = new TransactionJournal(window.localStorage);
+        const receipt = journal.current.read(); pending.current = receipt; setPendingReceipt(receipt);
+        if (receipt) {
+          setEndpoint(receipt.endpoint);
+          setProgress({ phase: 'unknown', signature: receipt.signature, message: 'Unresolved public receipt restored. Verify its original local network and check confirmation before another payment.' });
+        }
+      } catch (cause) { setJournalBlocked(true); setError(describeError(cause)); }
+    }
+    restore();
+    const changed = (event: StorageEvent) => { if (event.key === PENDING_KEY) restore(); };
+    window.addEventListener('storage', changed);
+    return () => { window.removeEventListener('storage', changed); signatureQueue.current?.cancel(); };
+  }, []);
 
   useEffect(() => { const changed = () => setWallets(discoverWallets()); changed(); return watchWallets(changed); }, []);
   useEffect(() => {
     const changed = () => {
-      generation.current++;
+      // A benign wallet account switch must not discard already verified signatures.
       setWalletAccounts(connected.flatMap(identities));
-      setInitReview(undefined);
     };
     changed();
     const off = connected.map(wallet => watchIdentityWallet(wallet, changed));
@@ -60,7 +87,7 @@ export function App() {
     const request = generation.current;
     const read = ++dataRequest.current;
     try {
-      await verifyLocalNetwork(current, expected.genesis);
+      await verifyLocalNetwork(current, expected.genesis, expected.deployment);
       const result = await loadSnapshot(current, address);
       if (generation.current !== request || dataRequest.current !== read) return;
       setSnapshot(result); setError('');
@@ -79,9 +106,19 @@ export function App() {
   }, [loadedAddress, connection, network, busy]);
 
   async function operation(task: () => Promise<void>) {
-    setBusy(true); setError('');
+    if (actionInFlight.current) return;
+    actionInFlight.current = true; setBusy(true); setError('');
     try { await task(); } catch (cause) { const message = describeError(cause); setError(message); if (message.startsWith('RPC unavailable')) setSnapshot(undefined); }
-    finally { setBusy(false); }
+    finally { actionInFlight.current = false; setBusy(false); }
+  }
+  async function walletOperation(task: () => Promise<void>) {
+    setWalletBusy(true);
+    try { await task(); } catch (cause) { setError(describeError(cause)); }
+    finally { setWalletBusy(false); }
+  }
+  function settleReceipt(signature: string) {
+    if (!journal.current) throw new Error('Public transaction journal unavailable.');
+    journal.current.clear(signature); pending.current = undefined; setPendingReceipt(undefined);
   }
   function requireConnection() {
     if (!connection || !network) throw new Error('Verify the local network first.');
@@ -94,35 +131,48 @@ export function App() {
   async function connectRPC() {
     generation.current++; setSnapshot(undefined); setLoadedAddress(''); setNetwork(undefined); setConnection(undefined); setInitReview(undefined);
     const candidate = new Connection(localEndpoint(endpoint), 'confirmed');
-    const verified = await verifyLocalNetwork(candidate);
+    if (pending.current && localEndpoint(endpoint) !== pending.current.endpoint) throw new Error('Resolve the pending transaction on its original RPC before switching networks.');
+    const verified = await verifyLocalNetwork(candidate, pending.current?.genesis);
     setConnection(candidate); setNetwork(verified);
   }
   async function fresh() {
     const current = requireConnection();
     if (!loadedAddress) throw new Error('Load a vault first.');
     const request = generation.current; const read = ++dataRequest.current;
-    await verifyLocalNetwork(current.connection, current.network.genesis);
+    await verifyLocalNetwork(current.connection, current.network.genesis, current.network.deployment);
     const result = await loadSnapshot(current.connection, loadedAddress);
     if (generation.current !== request) throw new Error('Wallet or network changed; refresh the account state.');
     if (dataRequest.current === read) setSnapshot(result);
     return result;
   }
   async function send(instructions: TransactionInstruction[], signers: SignerConnection[], address = loadedAddress) {
-    const current = requireConnection();
-    const request = generation.current;
-    let final: Progress | undefined;
-    setProgress(undefined);
-    try {
-      await submitInstructions(current.connection, current.network, instructions, signers, state => {
-        final = state; setProgress(state);
-      }, () => { if (generation.current !== request) throw new Error('Wallet accounts changed. Start a fresh signing round.'); });
-    } catch (cause) {
-      setProgress({ phase: 'failed', message: describeError(cause) });
-      throw cause;
-    }
-    if (final && (final as Progress).phase === 'confirmed' && generation.current === request) {
-      if (address) { setLoadedAddress(address); setVaultInput(address); await refresh(address, current.connection, current.network); }
-    }
+    return withTransactionLock(navigator.locks, async () => {
+      const stored = journal.current?.read();
+      if (stored) { pending.current = stored; setPendingReceipt(stored); throw new Error('A pending transaction must be reconciled before another payment.'); }
+      const current = requireConnection();
+      const request = generation.current;
+      let final: Progress | undefined;
+      if (pending.current) throw new Error('Resolve the previous transaction before another payment.');
+      setProgress(undefined);
+      try {
+        await submitInstructions(current.connection, current.network, instructions, signers, state => {
+          if (state.phase === 'submitting') {
+            if (!journal.current || !state.receipt) throw new Error('Cannot persist a public transaction receipt. Nothing was submitted.');
+            journal.current.record(state.receipt); pending.current = state.receipt; setPendingReceipt(state.receipt);
+          }
+          if ((state.phase === 'confirmed' || state.phase === 'failed') && state.signature) settleReceipt(state.signature);
+          final = state; setProgress(state);
+        }, () => { if (generation.current !== request) throw new Error('Network or vault selection changed. Start a fresh signing round.'); });
+      } catch (cause) {
+        const receipt = pending.current ?? journal.current?.read();
+        if (receipt) { pending.current = receipt; setPendingReceipt(receipt); }
+        setProgress({ phase: receipt ? 'unknown' : 'failed', message: describeError(cause), ...(receipt ? { signature: receipt.signature } : {}) });
+        throw cause;
+      }
+      if (final && (final as Progress).phase === 'confirmed' && generation.current === request) {
+        if (address) { setLoadedAddress(address); setVaultInput(address); await refresh(address, current.connection, current.network); }
+      }
+    });
   }
   async function onProposal(action: 'approve' | 'execute', address: string) {
     const current = requireConnection(); const signer = requireSigner(); const state = await fresh();
@@ -141,38 +191,39 @@ export function App() {
     <section aria-labelledby="network-title"><h2 id="network-title">1. Local network and program</h2>
       <form onSubmit={event => { event.preventDefault(); void operation(connectRPC); }}>
         <label>Local RPC URL<input value={endpoint} disabled={busy || unknown} onChange={event => setEndpoint(event.target.value)} /></label>
-        <button disabled={busy || unknown}>Verify local network</button>
+        <button disabled={busy}>Verify local network</button>
       </form>
       <dl><dt>Network</dt><dd>{network ? 'Verified local validator' : 'Not verified'}</dd>
         <dt>Verified RPC</dt><dd>{network?.endpoint ?? '—'}</dd><dt>Genesis hash</dt><dd><code>{network?.genesis ?? '—'}</code></dd>
-        <dt>Program ID</dt><dd><code>{WALLET_PROGRAM_ID.toBase58()}</code></dd></dl>
+        <dt>Program ID</dt><dd><code>{WALLET_PROGRAM_ID.toBase58()}</code></dd>
+        <dt>Upgrade trust</dt><dd>{network?.deployment?.kind === 'upgradeable' ? <>Upgradeable: authority <code>{network.deployment.authority}</code> can replace every vault authorization rule.</> : network?.deployment ? 'Immutable program: no upgrade authority reported by its loader.' : 'Not checked'}</dd></dl>
       <p>The compiled program must already be loaded in local genesis. This page cannot deploy it.</p>
     </section>
     <section aria-labelledby="wallet-title"><h2 id="wallet-title">2. Wallet connections</h2>
       <p>Connect Wallet Standard wallets with localnet and legacy sign-transaction support. Signing stays inside the wallets; the app never receives private keys.</p>
       {!wallets.length && <p>No compatible Wallet Standard wallet detected. Open this page in a browser with a compatible wallet installed.</p>}
-      <div className="actions">{wallets.map((wallet, index) => <button key={`${wallet.name}-${index}`} disabled={busy || unknown} onClick={() => void operation(async () => {
+      <div className="actions">{wallets.map((wallet, index) => <button key={`${wallet.name}-${index}`} disabled={walletBusy || unknown} onClick={() => void walletOperation(async () => {
         await connectWallet(wallet); setConnected(previous => previous.includes(wallet) ? [...previous] : [...previous, wallet]);
       })}>Connect {wallet.name}</button>)}</div>
-      <label>Active wallet<select value={activeId} disabled={busy || unknown} onChange={event => setActiveId(event.target.value)}>
+      <label>Active wallet<select value={activeId} disabled={walletBusy || unknown} onChange={event => setActiveId(event.target.value)}>
         <option value="">Select a connected identity</option>{walletAccounts.map(account => <option key={account.id} value={account.id}>{account.label} — {account.address}</option>)}
       </select></label>
       {active && <p>Active public key: <code>{active.address}</code></p>}
-      {connected.map((wallet, index) => <button key={index} disabled={busy || unknown} onClick={() => void operation(async () => {
+      {connected.map((wallet, index) => <button key={index} disabled={walletBusy || unknown} onClick={() => void walletOperation(async () => {
         await disconnectWallet(wallet); setConnected(previous => previous.filter(item => item !== wallet));
       })}>Disconnect {wallet.name}</button>)}
       <p className="notice">Demonstration only: three identities on one computer do not prove independent device security.</p>
     </section>
     <section aria-labelledby="init-title"><h2 id="init-title">3. Initialize a vault — all three owners sign</h2>
-      <p>Select three distinct connected authorization identities. Owner 1 funds the account rent and transaction fee. No owner receives an automatic approval.</p>
+      <p>Enter three distinct authorization public keys. Connect or switch to each identity when its signature is requested. Owner 1 funds the account rent and transaction fee. No owner receives an automatic approval.</p>
       <form onSubmit={event => { event.preventDefault(); void operation(async () => {
         requireConnection(); validateOwners(owners);
-        if (owners.some(owner => !walletAccounts.some(account => account.address === owner))) throw new Error('Connect all three authorization identities before initializing.');
         const id = parseU64(vaultId); setInitReview({ owners: [...owners], vaultId: id, address: derived });
       }); }}>
-        {owners.map((owner, index) => <label key={index}>Authorization identity {index + 1}<select value={owner} disabled={busy || unknown} onChange={event => {
+        {owners.map((owner, index) => <label key={index}>Authorization identity {index + 1}<input list="connected-identities" placeholder="Authorization public key only" value={owner} disabled={busy || unknown} onChange={event => {
           setOwners(previous => previous.map((key, position) => position === index ? event.target.value : key)); setInitReview(undefined);
-        }}><option value="">Select identity {index + 1}</option>{walletAccounts.map(account => <option key={account.id} value={account.address}>{account.label} — {account.address}</option>)}</select></label>)}
+        }} /></label>)}
+        <datalist id="connected-identities">{walletAccounts.map(account => <option key={account.id} value={account.address}>{account.label}</option>)}</datalist>
         <label>Vault ID (integer)<input value={vaultId} disabled={busy || unknown} onChange={event => { setVaultId(event.target.value); setInitReview(undefined); }} /></label>
         <p>Derived vault address: <code>{derived || 'Choose valid identities and a vault ID'}</code></p>
         <button disabled={disabled}>Review initialization</button>
@@ -182,17 +233,33 @@ export function App() {
         <p>Each wallet will sign the same initialization message. All three valid signatures are required before submission. If signing expires, start again with all three.</p>
         <button disabled={disabled} onClick={() => void operation(async () => {
           const { connection: current } = requireConnection();
-          const signers = initReview.owners.map(owner => { const identity = walletAccounts.find(account => account.address === owner); if (!identity) throw new Error('Initialization identity disconnected.'); return signerFor(identity); });
+          const signers = initReview.owners.map((owner, index) => ({ address: owner, label: `Owner ${index + 1}`,
+            sign: (bytes: Uint8Array) => signatureQueue.current!.request(owner, bytes) }));
           const instruction = await initializeInstruction(current, initReview.owners, initReview.vaultId);
           await send([instruction], signers, initReview.address); setInitReview(undefined);
         })}>Collect all 3 signatures and initialize</button>
       </div>}
     </section>
+    {signatureRequest && <section aria-label="Initialization signing request">
+      <h2>Required authorization signature</h2><p>Connect or switch your external wallet to <code>{signatureRequest.address}</code>. Earlier verified signatures remain in this same message.</p>
+      <button disabled={signatureRequest.signing || !walletAccounts.some(account => account.address === signatureRequest.address)} onClick={() => {
+        const identity = walletAccounts.find(account => account.address === signatureRequest.address);
+        if (!identity) return;
+        void signatureQueue.current!.sign(identity.address, async bytes => {
+          const current = requireConnection(); await verifyLocalNetwork(current.connection, current.network.genesis, current.network.deployment);
+          const blockhash = Transaction.from(bytes).recentBlockhash!;
+          if (!(await current.connection.isBlockhashValid(blockhash, { commitment: 'confirmed' })).value) throw new Error('Signing blockhash expired. Rebuild and collect all three signatures again. Nothing was submitted.');
+          return signerFor(identity).sign(bytes);
+        });
+      }}>Sign with requested identity</button>
+      <button onClick={() => signatureQueue.current!.cancel()}>Cancel signing round</button>
+      <p>If the blockhash expires, restart with the initialization button and all three wallets. Partial signatures are never carried into a new message.</p>
+    </section>}
     <section aria-labelledby="vault-title"><h2 id="vault-title">4. Load vault and deposit test SOL</h2>
       <form onSubmit={event => { event.preventDefault(); void operation(async () => {
         const current = requireConnection(); const address = new PublicKey(vaultInput).toBase58();
         generation.current++; setSnapshot(undefined); setLoadedAddress('');
-        await verifyLocalNetwork(current.connection, current.network.genesis);
+        await verifyLocalNetwork(current.connection, current.network.genesis, current.network.deployment);
         const result = await loadSnapshot(current.connection, address); setLoadedAddress(address); setSnapshot(result);
       }); }}><label>Vault address<input value={vaultInput} disabled={busy || unknown} onChange={event => setVaultInput(event.target.value)} /></label><button disabled={disabled}>Load vault</button></form>
       {snapshot ? <><dl><dt>Loaded vault</dt><dd><code>{snapshot.vault.address}</code></dd>
@@ -229,15 +296,15 @@ export function App() {
       {snapshot && !snapshot.proposals.length && <p>No proposals recorded for this vault.</p>}
     </section>
     <section aria-labelledby="transaction-title"><h2 id="transaction-title">Transaction outcome</h2><TransactionStatus progress={progress} />
-      {unknown && progress.signature && <button disabled={busy} onClick={() => void operation(async () => {
-        const { connection: current, network: expected } = requireConnection(); await verifyLocalNetwork(current, expected.genesis);
+      {unknown && uncertainSignature && <button disabled={busy} onClick={() => void operation(async () => {
+        const { connection: current, network: expected } = requireConnection(); await verifyLocalNetwork(current, expected.genesis, expected.deployment);
         let status: 'confirmed' | 'pending';
-        try { status = await signatureStatus(current, progress.signature!); }
+        try { status = await signatureStatus(current, uncertainSignature); }
         catch (cause) {
-          if (cause instanceof ConfirmedTransactionFailure) { setProgress({ ...progress, phase: 'failed', message: describeError(cause) }); return; }
+          if (cause instanceof ConfirmedTransactionFailure) { settleReceipt(uncertainSignature); setProgress({ ...progress, phase: 'failed', message: describeError(cause) }); return; }
           throw cause;
         }
-        if (status === 'confirmed') { setProgress({ ...progress, phase: 'confirmed', message: 'Transaction confirmed by the local validator.' }); await refresh(); }
+        if (status === 'confirmed') { settleReceipt(uncertainSignature); setProgress({ ...progress, phase: 'confirmed', message: 'Transaction confirmed by the local validator.' }); await refresh(); }
         else setError('Transaction is still unconfirmed. Check its signature before retrying.');
       })}>Check transaction confirmation</button>}
     </section>

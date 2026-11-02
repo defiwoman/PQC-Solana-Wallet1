@@ -18,6 +18,11 @@ The interface may connect external Wallet Standard signers for these five local
 operations. Preserve all three initialization signatures; never collect private
 keys in the app, a backend, logs, storage, or source. Only Node development test
 fixtures may generate disposable signing keys. Do not add public-network writes.
+Preserve verified earlier signatures through wallet account switching; a new
+blockhash must collect all three signatures again. Only public pending receipts
+may persist in browser storage; never partial signed transactions or keys.
+Keep unknown outcomes locked across reload; finalized landed failures are required
+before failure retry. Preserve loader/upgrade-authority trust warnings.
 Keep the UI label "Experimental classical multisig — local/devnet only."
 Never request or commit a real recovery phrase, private key, or production secret.
 
@@ -28,7 +33,7 @@ worktree unless the user explicitly requests one. Preserve pre-existing work.
 
 Active code lives in `programs/wallet`, `packages/sdk`, `apps/web`, and `tests`.
 Read `docs/development.md`, `docs/frontend-walkthrough.md`,
-`docs/architecture.md`, and `docs/threat-model.md`.
+`docs/architecture.md`, `docs/threat-model.md`, and `docs/pre-devnet-review.md`.
 The original README, root `src`, root Vite entry/config, and
 `programs/pqc-solana-wallet` are retained from the earlier scaffold. They are not
 the active frontend/program targets; do not accidentally build both programs.
