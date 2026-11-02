@@ -47,6 +47,30 @@ rejected. New recipients need enough lamports for rent exemption. The vault and
 proposal rent are not withdrawable. Failed transactions can charge their fee payer
 even though the vault/recipient/proposal writes roll back.
 
+## Frontend signing and RPC boundary
+
+The app receives only public keys, transaction bytes and signatures; signing keys
+remain in external wallets. It has no backend, seed/private-key input, key-file
+upload or persistent browser signing session. Wallet-provided names are labels,
+not proof of independent security. Three identities on one computer are visibly
+marked as a demonstration.
+
+All three initialization signatures must verify on one unchanged message before
+broadcast. The app rejects message-changing wallets and rebuilds from scratch
+when a signing blockhash expires. A wallet-account change invalidates the round.
+The browser checks each signer's actual signature, not a local approval flag.
+
+Local RPC URLs, public-genesis rejection, a pinned genesis and program-presence
+checks prevent accidental public-chain use. A malicious local RPC can lie about
+state/network; these checks are not cryptographic RPC attestation. Use a trusted
+local validator and disposable keys only. Never connect real funded wallets.
+
+RPC reads are the data source, with canonical account validation and no optimistic
+vote/balance changes. A failed read clears current account data. Ambiguous writes
+retain their signature and block automatic retry to avoid duplicate deposits.
+The app checks again before signing/submission; on-chain checks remain decisive
+if displayed state becomes stale or proposals expire while a wallet prompt is open.
+
 ## Quantum limits and excluded work
 
 Two classical Ed25519 approvals do not provide post-quantum security. No PQC
@@ -60,5 +84,7 @@ upgrade/recovery mechanism. The chain's own classical security remains relevant.
 The local integration suite tests the compiled program and the stated rejection
 paths, not arbitrary adversarial inputs, formal correctness, hardware wallets,
 public devnet behavior, production economics, compromised validator/RPC behavior,
-or quantum security. The UI is only a status page and has no live signing flow.
+or quantum security. The interface builds local-only transactions using external Wallet Standard
+signers. Automated coverage includes the signing protocol and Chromium account
+reads, but not actual wallet-extension prompts or physical hardware devices.
 Use no real funds, real recovery phrases or production keys for this experiment.

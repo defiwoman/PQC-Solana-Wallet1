@@ -1,3 +1,97 @@
+# Classical vault interface validation — 2 November 2026
+
+## Preservation and scope
+
+Continued `feature/classical-vault` from its verified pushed commit
+`13fa5e02eeb9e99092db1846735d3c1b341928c4`, with a clean starting working tree.
+The Rust program, Cargo manifests/lockfile, Anchor configuration, generated program
+IDL and all existing validator tests remain unchanged. The initial classical
+vault is NOT quantum-resistant. No external deployment or public-network write
+was performed.
+
+The status page is now a real-account interface for local initialization, balance
+and rent display, deposits, immutable proposals, recorded approval inspection,
+wallet approval and execution. Wallet connections use Wallet Standard. Writes
+are deliberately local-only, despite the retained local/devnet project label.
+
+## Commands actually run and results
+
+| Command / check | Result |
+| --- | --- |
+| Git status, branch/history inspection and `git ls-remote origin refs/heads/feature/classical-vault` | Clean starting state; local and remote matched the tested parent |
+| `npm view` and exact npm installs | Verified compatible Wallet Standard and DOM-test releases; updated the real npm lockfile |
+| `npm run test:validator` | **17 passed, 0 failed, 0 skipped, 0 cancelled; exit 0**, executing the unchanged compiled program on a fresh local Agave validator |
+| `npm test` | **20 passed, 0 failed/skipped/cancelled; exit 0**, covering SDK, actual signature verification, wallet feature guards, interactive DOM controls and failure/confirmation states |
+| `npm run build` | SDK declarations/JavaScript, full TypeScript checks and frontend production build passed |
+| `npm run validator:local` | New disposable loopback validator started with the unchanged compiled program in genesis; no external deployment |
+| `npm run preview --workspace @pqc-wallet/web` | Built frontend served internally on port 4173 for testing |
+| `npm run test:browser` | **Passed** in system Chromium 154.0.8037.57 against actual local RPC/accounts; expected balance/recipient/one-approval state appeared, execution remained disabled and a mainnet URL was rejected |
+| Compare source/ABI against tested parent | No changes to `programs/wallet`, Cargo.toml/Cargo.lock, Anchor.toml or generated program interface |
+| `git diff --check` | Passed |
+
+Pinned additions: Wallet Standard app/base/features **1.1.1**, Solana Wallet
+Standard features **1.5.0**, Buffer **6.0.3**, React Testing Library **16.3.3**,
+DOM Testing Library **10.4.2**, jsdom **30.1.3**, jsdom types **30.0.0**. Existing
+Node 24.19.0, npm 11.9.0, React 19.3.1, TypeScript 7.0.2, Vite 8.3.5,
+Anchor 1.2.2 and web3.js 1.98.4 were retained.
+
+## Signing and frontend coverage
+
+Tests verify all three initialization signatures cryptographically on one unchanged
+message; two signatures, duplicate identities, missing/invalid signatures,
+message changes, wallet rejection and expired blockhash all prevent submission.
+They also verify public-RPC/changed-genesis rejection, safe integer inputs,
+unsupported wallet networks, disconnected accounts, deterministic signature
+retention after uncertain submission, and confirmed-failure versus RPC-uncertainty
+handling. Mock RPC responses in these unit tests are not program-execution tests.
+
+React DOM tests click important approval/execution controls: one approval cannot
+execute, a repeat approval is disabled, a second distinct owner can approve,
+clicking does not invent an on-chain vote, two recorded votes enable execution,
+unauthorized approval is disabled, execution remains permissionless after two
+approvals, expiry/consumption disable actions, and insufficient spendable funds
+blocks execution. Failure/unknown/confirmed transaction results remain visible.
+
+The Chromium smoke check sets up local accounts using disposable keys only in the
+Node test process. Through the same SDK it collects three signatures, initializes,
+deposits, creates a proposal and records one approval on the actual validator.
+It then opens the production app and verifies real RPC state. **No key, seed,
+signing fixture or test wallet is injected into the browser.** No application
+backend was added. Browser storage stays empty. The screenshot and public result
+JSON are retained in ignored `target/interface-browser-smoke`.
+
+Existing validator evidence is in ignored `target/interface-validator.log` and
+`target/validator-runs/1793642924942-33112`. It remains distinct from the frontend
+and browser checks. None of those frontend checks replace the 17 program tests.
+
+## Diagnosed issues and remaining limits
+
+The first restricted test-runner invocation hit an IPC sandbox permission error;
+it passed through the supported native execution path. The initial Chromium
+harness queried the document before its body existed; it was fixed to await the
+body. The real browser then exposed a missing global Buffer used by Anchor's
+browser coder/dependencies. Added an explicit Buffer byte-serialization polyfill;
+subsequent Chromium account reads passed. The jsdom test environment also needed
+its own Event/CustomEvent constructors to match its window realm; the final suite
+has no Wallet Standard event-dispatch error.
+
+Actual installed wallet extensions and physical hardware devices were **not**
+automated. They must advertise localnet plus legacy sign-transaction support;
+unsupported wallets are rejected rather than relabeled. Three identities on one
+computer are visibly labeled as demonstration, not independent device security.
+No real recovery phrase or production key was requested or used.
+
+Build warnings remain for Anchor's exported Node-only fs/process helpers being
+externalized and for a bundle above 500 KB. This app never invokes Node wallet
+loading; its production account-read path was checked in Chromium. The previously
+recorded upstream uuid deprecation also remains. No independent audit, public
+chain operation, PQC verification or production-safety claim is supplied.
+
+No hosted preview URL is available. See `frontend-walkthrough.md` for exact local
+startup, wallet requirements, test airdrops and the three-signature workflow.
+
+---
+
 # Stage A validation — 2 November 2026
 
 ## Branch and preservation

@@ -22,13 +22,19 @@
     "build:program": "npm run build:program:sbf && npm run build:program:idl",
     "build:program:sbf": "anchor build --no-idl --tools-version v1.57 -- --jobs 3 -- --locked",
     "build:program:idl": "anchor idl build --program-name wallet --out target/wallet.json --out-ts target/wallet.ts -- --locked --jobs 3 && node scripts/sync-idl.mjs",
-    "test:validator": "npm run build:program && npm run build:sdk && tsx --test --test-concurrency=1 tests/integration/vault.test.ts"
+    "test:validator": "npm run build:program && npm run build:sdk && tsx --test --test-concurrency=1 tests/integration/vault.test.ts",
+    "validator:local": "npm run build:program && node scripts/local-validator.mjs",
+    "test:browser": "node tests/browser-smoke.mjs"
   },
   "devDependencies": {
     "@anchor-lang/cli": "1.2.2",
     "@anchor-lang/core": "1.2.2",
     "@solana/web3.js": "1.98.4",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
+    "@types/jsdom": "30.0.0",
     "@types/node": "24.19.2",
+    "jsdom": "30.1.3",
     "tsx": "4.23.15",
     "typescript": "7.0.2"
   }

@@ -9,8 +9,9 @@ not an audited wallet or permission to use real funds.
 `programs/wallet` implements initialization, SOL deposits, immutable transfer
 proposals, per-owner approvals, and execution after two distinct approvals.
 There are no tokens, swaps, arbitrary instructions, PQC, recovery, key rotation,
-account closure, or proposal cleanup. `apps/web` remains a status page; it does
-not connect to a wallet or submit transfers. The legacy root frontend and
+account closure, or proposal cleanup. `apps/web` now connects external Wallet
+Standard identities and builds local-only transactions against these same five
+instructions; the Rust program and its checks are unchanged. The legacy root frontend and
 `programs/pqc-solana-wallet` remain unchanged and are not active targets.
 
 ## Accounts and canonical addresses
@@ -108,6 +109,42 @@ Agave validator with that binary at genesis, and submits signed transactions.
 Expected failures must be confirmed in the local ledger with program error logs;
 a client-side exception or a mocked success does not satisfy the checks.
 See `validation.md` for the actual results and test-only boundary fixtures.
+
+## Wallet interface and initialization signing
+
+The generated IDL is unchanged. `@pqc-wallet/sdk/interface` decodes actual vault
+and proposal accounts, verifies canonical relationships and owners, exposes
+integer-lamport instruction builders, and coordinates fixed-message signing.
+The browser is not an authority: the program still enforces every authorization,
+expiry, replay, account and rent check. UI approval counts come only from account
+bits; balances and execution state are reread after confirmation, not assumed.
+
+Wallet connections use Wallet Standard `standard:connect`, account-change events,
+and legacy `solana:signTransaction`. All three initialization identities must be
+connected, distinct and on-curve. Owner 1 is the rent and transaction fee payer.
+The app sequentially collects and cryptographically verifies all three signatures
+on the same message, merging earlier verified signatures if a wallet omits them.
+Message alteration, missing signatures, rejected signing and expired blockhashes
+abort the round. It never broadcasts a partially signed initialization.
+
+All signing keys remain in external wallets. There is no app backend, seed-entry
+form, key generation/import or browser persistence. Test-only signing substitutes
+run in Node memory and are not included in the web bundle. Three identities on
+one computer are explicitly labeled as demonstration, not independent devices.
+
+Writes are restricted to credential-free loopback RPC URLs. Known public genesis
+hashes are rejected and a local genesis is pinned for subsequent reads/writes;
+program executability is verified before signing and again before submission.
+Wallets must advertise localnet and legacy signing support. This requires a
+trusted local RPC, not an untrusted proxy pretending to be a local validator.
+A changed genesis or unsupported wallet produces an error. No public deployment
+or public-network write capability was added.
+
+Confirmation uses HTTP status polling. The signature is known before broadcast;
+an ambiguous submission/confirmation retains it and blocks new transactions until
+checked. Confirmed failures are distinguished from RPC uncertainty. An RPC read
+failure clears current account displays instead of manufacturing zero balances.
+See `frontend-walkthrough.md` for initialization details and manual wallet limits.
 
 ## Later stages
 

@@ -1,3 +1,4 @@
+import { Buffer } from 'buffer';
 import { Program, type AnchorProvider } from '@anchor-lang/core';
 import { PublicKey } from '@solana/web3.js';
 import idl from './generated/wallet.json' with { type: 'json' };

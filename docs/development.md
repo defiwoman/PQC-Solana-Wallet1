@@ -3,8 +3,9 @@
 ## What you have
 
 An experimental classical 2-of-3 SOL vault, a typed TypeScript SDK, and a React
-status page. The compiled program supports local SOL transfers after two distinct
-approvals; the interface has no wallet connection or transfer controls.
+wallet interface. The compiled program supports local SOL transfers after two
+distinct approvals; the interface connects external Wallet Standard signers and
+reads actual accounts. See [the beginner walkthrough](frontend-walkthrough.md).
 Experimental classical multisig — local/devnet only.
 The initial classical vault is NOT quantum-resistant.
 The README is preserved as the original project plan.
@@ -31,7 +32,7 @@ occupied, stop your earlier server or choose another port intentionally.
 The cloud onboarding interface does not provide a browser preview link here.
 A server running inside the cloud is not your computer's localhost. To view it,
 use a port-forwarding/preview feature if your coding client provides one, or run
-these commands on your own computer. No wallet connection is needed.
+these commands on your own computer. Wallet connections are needed only for signing actions, not reading a vault.
 
 After changing SDK source while the frontend is running, run `npm run build:sdk`
 again. To serve the production bundle, first build, then run:
@@ -73,7 +74,7 @@ the host Rust pin remains 1.99.1. Platform tools are downloaded on the first
 Solana build. An SBF compiler builds programs; it is not a validator or deployment.
 The full **Agave 4.4.0** CLI and local validator were also installed for Stage A
 from its official GitHub release after verifying the published SHA-256. They are
-not needed just to view the status page.
+not needed just to render the page; account reads and signing need the local validator.
 
 Then, from the repository root:
 
@@ -138,7 +139,11 @@ intentionally wrong account ownership. These fixtures contain no signing keys
 and are not production initialization paths.
 
 Only local genesis loading was used. Nothing was deployed to devnet or mainnet.
-The status page still requires no validator.
+Rendering the page needs no validator; reading accounts and submitting transactions
+requires the documented local validator. `npm run validator:local` starts a
+disposable instance with the compiled program in local genesis. See
+`frontend-walkthrough.md` for wallet requirements, airdrops and three-signature
+initialization. Public-network transactions remain disabled.
 
 ## Calling the local program
 

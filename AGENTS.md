@@ -14,6 +14,10 @@ Stages, in order:
 Stage A implements only initialization, deposits, immutable proposals, approvals,
 and 2-of-3 SOL execution. Do not add tokens, swaps, recovery, owner rotation,
 arbitrary instruction execution, PQC, account closure, or external deployment.
+The interface may connect external Wallet Standard signers for these five local
+operations. Preserve all three initialization signatures; never collect private
+keys in the app, a backend, logs, storage, or source. Only Node development test
+fixtures may generate disposable signing keys. Do not add public-network writes.
 Keep the UI label "Experimental classical multisig — local/devnet only."
 Never request or commit a real recovery phrase, private key, or production secret.
 
@@ -23,7 +27,8 @@ Use the existing checkout; cloud tasks are already isolated. Do not create a Git
 worktree unless the user explicitly requests one. Preserve pre-existing work.
 
 Active code lives in `programs/wallet`, `packages/sdk`, `apps/web`, and `tests`.
-Read `docs/development.md`, `docs/architecture.md`, and `docs/threat-model.md`.
+Read `docs/development.md`, `docs/frontend-walkthrough.md`,
+`docs/architecture.md`, and `docs/threat-model.md`.
 The original README, root `src`, root Vite entry/config, and
 `programs/pqc-solana-wallet` are retained from the earlier scaffold. They are not
 the active frontend/program targets; do not accidentally build both programs.
@@ -37,7 +42,9 @@ repeatable installs/checks. Never disable TLS, checksum, or signature checks.
 From the repository root:
 
 - `npm run build`: SDK build, TypeScript checks, and React production bundle.
-- `npm test`: TypeScript scaffold tests, including server rendering of the UI.
+- `npm test`: SDK, signing protocol, wallet metadata and interactive React DOM tests.
+- `npm run test:browser`: system Chromium checks against a running disposable local
+  validator and production preview; never inject private keys into the browser.
 - `npm run check:program`: host Rust compile check.
 - `npm run test:program`: host Rust tests; not validator integration coverage.
 - `npm run test:validator`: builds and runs the actual program on a private local
