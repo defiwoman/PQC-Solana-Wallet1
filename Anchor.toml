@@ -1,0 +1,13 @@
+[toolchain]
+anchor_version = "0.31.1"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+pqc_solana_wallet = "Fg6PaFpoGXkYsidMpWxTWqkZ7FEfcYkgMQHGsZPJGmGy"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
