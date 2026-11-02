@@ -170,3 +170,15 @@ canonical relationships are checked; upgrade authority and deployment slot are
 shown/pinned across signing. An upgrade authority can still replace this code and
 bypass its threshold. No devnet authority has been chosen and public writes remain
 disabled.
+
+## Proposed devnet upgrade role
+
+The [devnet upgrade policy](devnet-upgrade-policy.md) proposes a dedicated
+single development key, separate from vault owners and the program-address
+keypair. Its holder can replace all program logic, including spending rules.
+Public authority display and an approved-baseline mismatch hold are required for
+a future devnet interface; the current local session pin alone is insufficient
+across reload/reverification. Custody is on a persistent personal workstation
+with an independently accessible encrypted backup, not an ephemeral cloud copy.
+No key, deployment, on-chain authority change or frontend code change is made by
+this proposal.

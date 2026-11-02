@@ -101,3 +101,17 @@ metadata is pinned through signing. That detection is not governance: any retain
 upgrade authority can replace all vault authorization rules. See
 `pre-devnet-review.md` for the unresolved devnet authority decision and required
 real-wallet/device tests.
+
+## Proposed devnet authority custody and acceptance
+
+See [the proposed devnet upgrade policy](devnet-upgrade-policy.md) for the
+single dedicated development key, its separate operator-controlled storage and
+encrypted backup, public authority disclosure, and required change-review hold.
+The holder can replace spending rules; this authority is not protected by the
+vault's two-of-three approvals. Separation of the authority key from all vault
+owner keys is a policy requirement, not currently an on-chain constraint.
+
+The policy is documentation, not an activated authority or completed custody
+setup. The current local session pin is not a persistent approved devnet baseline;
+that baseline and a hold that survives reload/reverification remain required
+before devnet enablement. Mainnet remains excluded.

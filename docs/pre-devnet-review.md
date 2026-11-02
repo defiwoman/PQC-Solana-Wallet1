@@ -10,6 +10,13 @@ Local checks pass, but actual external-wallet signing and an explicit upgrade
 trust decision remain gates. Public-network writes intentionally remain disabled.
 The classical vault is NOT quantum-resistant.
 
+**Documentation follow-up:** the [proposed devnet upgrade policy](devnet-upgrade-policy.md)
+now specifies a separate dedicated development authority, its trust/custody/backup
+plan and required public-baseline signing hold. No key, address or on-chain
+authority was created or configured. Operator/backup choices, real-wallet tests
+and enforcement of the future devnet baseline remain open; the readiness decision
+below is unchanged.
+
 ## 1. Findings and fixes
 
 ### Concrete findings

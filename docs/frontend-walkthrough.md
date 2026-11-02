@@ -4,6 +4,13 @@ Experimental classical multisig — local/devnet only.
 The initial vault is NOT quantum-resistant. This walkthrough uses only a disposable
 local validator and test SOL. Nothing here deploys to a public network.
 
+For the proposed future devnet authority, read the
+[development upgrade-key policy](devnet-upgrade-policy.md). It separates the
+upgrade key from the three vault owners, specifies personal-workstation custody
+and an encrypted durable backup, and requires an approved public authority
+baseline plus a signing hold on unexpected changes. This walkthrough remains
+local-only; the policy has not created a key or enabled deployment.
+
 ## What you need
 
 Use the pinned Node/npm, Rust/Anchor and Agave tools in `development.md`.
