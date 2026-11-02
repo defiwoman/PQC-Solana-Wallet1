@@ -100,10 +100,16 @@ See `docs/validation.md` for the actual results from this session.
 Anchor can generate `target/deploy/wallet-keypair.json` for a local program
 identity. That file is secret and ignored; only its public program address belongs
 in `declare_id!` and `Anchor.toml`. A fresh checkout will not contain this key.
-If Anchor reports an address mismatch, run `npm exec -- anchor keys sync` after
-it has generated a fresh local program key, then rerun checks. This changes public
-address configuration; it does not deploy anything. Never copy a production key
-or share a recovery phrase to make a scaffold build pass.
+Do not run `anchor keys sync` to resolve a fresh checkout's generated-key mismatch:
+that would change the reviewed program ID and invalidate this branch's interface
+and baseline. Local genesis uses the existing compiled public ID and binary,
+without a deployment-key signature. If the build fails, preserve its output and
+investigate rather than changing keys/IDs. Never copy a production key or share a
+recovery phrase to make a build pass.
+
+For user-owned Windows/WSL tool installation, use
+[the Windows guide](windows-local-testing.md), not cloud-specific paths above.
+Current external-wallet signing remains [NOT RUN](real-wallet-test-plan.md).
 
 ## Real local-validator tests
 

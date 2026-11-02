@@ -50,3 +50,11 @@ export function signerFor(identity: WalletIdentity): SignerConnection {
     return result.signedTransaction;
   } };
 }
+
+/** Feature advertisements are a precheck, not evidence of successful signing. */
+export function walletPrecheck(identity: WalletIdentity) {
+  const feature = identity.wallet.features[SolanaSignTransaction] as SolanaSignTransactionFeature[typeof SolanaSignTransaction] | undefined;
+  const account = identity.wallet.accounts.find(item => item.address === identity.address);
+  return { walletLocalnet: identity.wallet.chains.includes(LOCAL_CHAIN), accountLocalnet: !!account?.chains.includes(LOCAL_CHAIN),
+    legacy: !!feature?.supportedTransactionVersions.includes('legacy'), apiVersion: feature?.version ?? 'missing' };
+}

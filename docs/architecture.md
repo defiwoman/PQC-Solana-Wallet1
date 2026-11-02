@@ -132,8 +132,8 @@ blockhash always requires all three signatures again. It never broadcasts a part
 
 All signing keys remain in external wallets. There is no app backend, seed-entry
 form or key generation/import. Partial signatures and transaction bytes are not
-persisted; only a public pending receipt is stored before broadcast for retry
-safety. Test-only signing substitutes
+persisted. Public pending receipts, reviewed authority baselines and security
+holds are stored for retry and trust checks. Test-only signing substitutes
 run in Node memory and are not included in the web bundle. Three identities on
 one computer are explicitly labeled as demonstration, not independent devices.
 
@@ -176,9 +176,19 @@ disabled.
 The [devnet upgrade policy](devnet-upgrade-policy.md) proposes a dedicated
 single development key, separate from vault owners and the program-address
 keypair. Its holder can replace all program logic, including spending rules.
-Public authority display and an approved-baseline mismatch hold are required for
-a future devnet interface; the current local session pin alone is insufficient
-across reload/reverification. Custody is on a persistent personal workstation
+The local interface now requires an explicitly reviewed expected authority bound
+to the local genesis and compiled program ID, loader, canonical ProgramData and
+deployment slot. It persists that public configuration and latches verification
+failures/mismatches across reload. Network refresh never approves a replacement.
+Every signing/submission path verifies against this expectation; account switching
+does not change it. Read-only investigation and receipt reconciliation remain
+available. The local helper publishes a predetermined genesis recipe, including
+the fixed System Program placeholder authority, for explicit operator review.
+No devnet baseline or key has been selected. Custody is on a persistent personal workstation
 with an independently accessible encrypted backup, not an ephemeral cloud copy.
 No key, deployment, on-chain authority change or frontend code change is made by
 this proposal.
+
+See [Windows local testing](windows-local-testing.md) and
+[real-wallet evidence and manual checks](real-wallet-test-plan.md). Current
+extension signing, Windows installation and independent-device testing are NOT RUN.

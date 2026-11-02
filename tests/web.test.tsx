@@ -17,6 +17,7 @@ Object.defineProperties(globalThis, {
 const { render, cleanup, fireEvent } = await import('@testing-library/react');
 const { App, TransactionStatus } = await import('../apps/web/src/App');
 const { ProposalCard } = await import('../apps/web/src/ProposalCard');
+const { AuthorityPanel } = await import('../apps/web/src/AuthorityPanel');
 afterEach(cleanup);
 const owners = Array.from({ length: 3 }, () => Keypair.generate().publicKey.toBase58());
 const vault = Keypair.generate().publicKey.toBase58(), to = Keypair.generate().publicKey.toBase58();
@@ -88,4 +89,15 @@ test('transaction failures and ambiguous RPC outcomes are visible; confirmation 
     assert(view.getByRole(phase === 'confirmed' ? 'status' : 'alert'));
     assert(view.getByText('public-transaction-signature')); cleanup();
   }
+});
+
+
+test('baseline approval is explicit and never prefilled from the observed authority', () => {
+  let calls = 0;
+  const view = render(<AuthorityPanel state={{ hold: 'Authority mismatch pending review' }} disabled={false} onApprove={() => { calls++; }} />);
+  assert.equal((view.getByLabelText('Reviewed public baseline JSON') as HTMLTextAreaElement).value, '');
+  assert(disabled(view.getByRole('button', { name: 'Approve reviewed baseline' })));
+  assert(view.getByText(/cannot stop the actual upgrade authority/));
+  fireEvent.click(view.getByRole('button', { name: 'Approve reviewed baseline' })); assert.equal(calls, 0);
+  assert(view.getByRole('alert'));
 });

@@ -19,8 +19,10 @@ operations. Preserve all three initialization signatures; never collect private
 keys in the app, a backend, logs, storage, or source. Only Node development test
 fixtures may generate disposable signing keys. Do not add public-network writes.
 Preserve verified earlier signatures through wallet account switching; a new
-blockhash must collect all three signatures again. Only public pending receipts
-may persist in browser storage; never partial signed transactions or keys.
+blockhash must collect all three signatures again. Only public pending receipts, explicitly reviewed network/program authority baselines
+and latched authority holds may persist in browser storage; never partial signed
+transactions or keys. Never auto-adopt an RPC-reported authority as the expected
+value. Missing/unverifiable/mismatched baselines block signing across reloads.
 Keep unknown outcomes locked across reload; finalized landed failures are required
 before failure retry. Preserve loader/upgrade-authority trust warnings.
 Keep the UI label "Experimental classical multisig — local/devnet only."

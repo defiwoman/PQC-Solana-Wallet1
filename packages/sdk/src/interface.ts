@@ -16,7 +16,7 @@ const PUBLIC_GENESIS = [
 export const LEGACY_LOADER = new PublicKey('BPFLoader2111111111111111111111111111111111');
 export const UPGRADEABLE_LOADER = new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111');
 export interface Deployment { kind: 'immutable' | 'upgradeable'; authority?: string; programData?: string; slot?: string }
-export interface Network { endpoint: string; genesis: string; deployment?: Deployment }
+export interface Network { endpoint: string; genesis: string; deployment?: Deployment; programId?: string }
 export interface PendingReceipt { signature: string; endpoint: string; genesis: string; blockhash: string; lastValidBlockHeight: number }
 export interface SignerConnection {
   address: string;
@@ -60,35 +60,40 @@ export function localEndpoint(endpoint: string): string {
 export function readClient(connection: Connection) {
   return new Program<Wallet>(idl as unknown as Wallet, { connection });
 }
+export class NetworkVerificationError extends Error {}
 export async function verifyLocalNetwork(connection: Connection, expectedGenesis?: string, expectedDeployment?: Deployment): Promise<Network> {
-  const endpoint = localEndpoint(connection.rpcEndpoint);
-  const genesis = await connection.getGenesisHash();
-  if (PUBLIC_GENESIS.some(prefix => genesis.startsWith(prefix)) || (expectedGenesis && genesis !== expectedGenesis)) {
-    throw new Error('Wrong network: the RPC is a public chain or the local validator was replaced. Reconnect and inspect the network.');
-  }
-  const program = await connection.getAccountInfo(WALLET_PROGRAM_ID, 'confirmed');
-  if (!program?.executable) throw new Error('Vault program is not loaded on this local validator. Start the documented local fixture.');
-  let deployment: Deployment;
-  if (program.owner.equals(LEGACY_LOADER)) {
-    deployment = { kind: 'immutable' };
-  } else if (program.owner.equals(UPGRADEABLE_LOADER)) {
-    if (program.data.length !== 36 || program.data.readUInt32LE(0) !== 2) throw new Error('Invalid upgradeable Program account.');
-    const dataAddress = new PublicKey(program.data.subarray(4, 36));
-    const canonical = PublicKey.findProgramAddressSync([WALLET_PROGRAM_ID.toBuffer()], UPGRADEABLE_LOADER)[0];
-    if (!canonical.equals(dataAddress)) throw new Error('Noncanonical ProgramData relationship.');
-    const data = await connection.getAccountInfo(dataAddress, 'confirmed');
-    if (!data || !data.owner.equals(UPGRADEABLE_LOADER) || data.data.length < 45 || data.data.readUInt32LE(0) !== 3 || data.data[12] > 1) {
-      throw new Error('Invalid upgradeable ProgramData account.');
+  try {
+    const endpoint = localEndpoint(connection.rpcEndpoint);
+    const genesis = await connection.getGenesisHash();
+    if (PUBLIC_GENESIS.some(prefix => genesis.startsWith(prefix)) || (expectedGenesis && genesis !== expectedGenesis)) {
+      throw new Error('Wrong network: the RPC is a public chain or the local validator was replaced. Reconnect and inspect the network.');
     }
-    deployment = { kind: data.data[12] === 1 ? 'upgradeable' : 'immutable', programData: dataAddress.toBase58(),
-      slot: data.data.readBigUInt64LE(4).toString(), ...(data.data[12] === 1 ? { authority: new PublicKey(data.data.subarray(13, 45)).toBase58() } : {}) };
-  } else {
-    throw new Error('Unexpected program loader owner. Reverify the local program.');
+    const program = await connection.getAccountInfo(WALLET_PROGRAM_ID, 'confirmed');
+    if (!program?.executable) throw new Error('Vault program is not loaded on this local validator. Start the documented local fixture.');
+    let deployment: Deployment;
+    if (program.owner.equals(LEGACY_LOADER)) {
+      deployment = { kind: 'immutable' };
+    } else if (program.owner.equals(UPGRADEABLE_LOADER)) {
+      if (program.data.length !== 36 || program.data.readUInt32LE(0) !== 2) throw new Error('Invalid upgradeable Program account.');
+      const dataAddress = new PublicKey(program.data.subarray(4, 36));
+      const canonical = PublicKey.findProgramAddressSync([WALLET_PROGRAM_ID.toBuffer()], UPGRADEABLE_LOADER)[0];
+      if (!canonical.equals(dataAddress)) throw new Error('Noncanonical ProgramData relationship.');
+      const data = await connection.getAccountInfo(dataAddress, 'confirmed');
+      if (!data || !data.owner.equals(UPGRADEABLE_LOADER) || data.data.length < 45 || data.data.readUInt32LE(0) !== 3 || data.data[12] > 1) {
+        throw new Error('Invalid upgradeable ProgramData account.');
+      }
+      deployment = { kind: data.data[12] === 1 ? 'upgradeable' : 'immutable', programData: dataAddress.toBase58(),
+        slot: data.data.readBigUInt64LE(4).toString(), ...(data.data[12] === 1 ? { authority: new PublicKey(data.data.subarray(13, 45)).toBase58() } : {}) };
+    } else {
+      throw new Error('Unexpected program loader owner. Reverify the local program.');
+    }
+    if (expectedDeployment && (['kind', 'authority', 'programData', 'slot'] as const).some(field => expectedDeployment[field] !== deployment[field])) {
+      throw new Error('Program deployment or upgrade authority changed. Reverify its trust before signing.');
+    }
+    return { endpoint, genesis, deployment, programId: WALLET_PROGRAM_ID.toBase58() };
+  } catch (cause) {
+    throw new NetworkVerificationError(cause instanceof Error ? cause.message : 'Network/authority verification unavailable.');
   }
-  if (expectedDeployment && (['kind', 'authority', 'programData', 'slot'] as const).some(field => expectedDeployment[field] !== deployment[field])) {
-    throw new Error('Program deployment or upgrade authority changed. Reverify its trust before signing.');
-  }
-  return { endpoint, genesis, deployment };
 }
 const exact = (value: number) => {
   if (!Number.isSafeInteger(value) || value < 0) throw new Error('RPC returned a balance outside the exact safe-integer range. No rounded balance will be shown.');

@@ -11,6 +11,11 @@ and an encrypted durable backup, and requires an approved public authority
 baseline plus a signing hold on unexpected changes. This walkthrough remains
 local-only; the policy has not created a key or enabled deployment.
 
+For installation on your own Windows computer, follow
+[the Windows local guide](windows-local-testing.md).
+[Official wallet evidence and the manual NOT RUN checklist](real-wallet-test-plan.md)
+are recorded separately; no current extension release has been certified.
+
 ## What you need
 
 Use the pinned Node/npm, Rust/Anchor and Agave tools in `development.md`.
@@ -75,6 +80,16 @@ computer running the browser.
    It pins that genesis and the observed loader/deployment metadata for subsequent
    actions. The upgrade-trust row reports any upgrade authority: that authority
    can replace the vault rules regardless of the two-of-three approval policy.
+   Before signing, paste the helper's PUBLIC `target/local-authority-baseline.json`
+   into **Reviewed public baseline JSON**, review genesis/program/authority against
+   your own validator terminal, enter a review note and tick the explicit review
+   checkbox. Click **Approve reviewed baseline**, then **Verify local network**.
+   The local genesis recipe expects the fixed System Program placeholder address
+   `11111111111111111111111111111111`, not a newly generated development key.
+   Expected configuration and a verification-failure hold persist across reloads.
+   Refresh/reverify never accepts a new RPC authority automatically. If a hold
+   occurs, investigate before explicitly reviewing the configuration again.
+   This UI guard cannot prevent an actual upgrade authority replacing the program.
 2. Configure compatible external wallets for the local validator. Connect the
    wallets. You may expose the three identities simultaneously, or enter their
    three public addresses and switch to each account when its signature is
@@ -166,8 +181,9 @@ rather than displayed rounded.
 ## When something fails
 
 - **Wrong network:** use the loopback validator and a wallet advertising localnet.
-  Public-network writes are disabled. If the local genesis changes, reverify and
-  load accounts on the new local chain.
+  Public-network writes are disabled. If the local genesis changes, investigate
+  and explicitly approve its reviewed public manifest before signing. Network
+  refresh does not replace the saved expectation or clear a hold.
 - **Rejected signature:** nothing is broadcast until all required signatures are
   present. Review the inputs and try a fresh signing round when ready.
 - **Unauthorized wallet:** select a recorded owner to propose or approve.
@@ -207,7 +223,9 @@ run `npm run test:browser` with system Chromium on PATH (or set CHROMIUM_PATH).
 That smoke test creates a local fixture using keys only in the Node test process,
 then uses the actual production page to read its balance and proposal. No keys
 or signing fixture are injected into Chromium and no application backend is
-created. It does not certify external wallet extensions or hardware devices.
+created. It also tests explicit public baseline approval, reload persistence and
+a mismatch hold without injecting a wallet. It does not certify external wallet
+extensions or hardware devices.
 
 See `validation.md` for observed results and remaining build warnings.
 

@@ -17,3 +17,6 @@ dt { color: #cbd5e1; font-weight: 600; margin-top: 0.6rem; } dd { margin-left: 0
 code { overflow-wrap: anywhere; font-size: 0.9em; } li { overflow-wrap: anywhere; }
 .proposal, .review { border: 1px solid #64748b; border-radius: 0.5rem; padding: 1rem; margin: 1rem 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+
+textarea { display: block; width: 100%; background: #0f172a; color: #e2e8f0; padding: 0.6rem; }
+input[type="checkbox"] { display: inline; width: auto; }

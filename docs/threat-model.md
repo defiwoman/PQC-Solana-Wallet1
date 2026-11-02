@@ -52,7 +52,8 @@ even though the vault/recipient/proposal writes roll back.
 The app receives only public keys, transaction bytes and signatures; signing keys
 remain in external wallets. It has no backend, seed/private-key input, key-file
 upload or persisted partial signing session. Only whitelisted public pending
-receipt metadata is stored before broadcast; reload restores its retry lock and
+receipt metadata, reviewed public authority configuration and latched holds persist;
+the receipt is stored before broadcast; reload restores its retry lock and
 same-origin Web Locks serialize submission. Wallet-provided names are labels,
 not proof of independent security. Three identities on one computer are visibly
 marked as a demonstration.
@@ -111,7 +112,17 @@ The holder can replace spending rules; this authority is not protected by the
 vault's two-of-three approvals. Separation of the authority key from all vault
 owner keys is a policy requirement, not currently an on-chain constraint.
 
-The policy is documentation, not an activated authority or completed custody
-setup. The current local session pin is not a persistent approved devnet baseline;
-that baseline and a hold that survives reload/reverification remain required
-before devnet enablement. Mainnet remains excluded.
+The policy does not establish an activated devnet authority or completed custody
+setup. The implemented local gate persists an explicitly reviewed public baseline
+bound to network/genesis and compiled program ID, loader, canonical ProgramData,
+authority and deployment slot. It never trusts a new RPC value automatically.
+Unverifiable/mismatched metadata blocks new signing and latches a hold across
+reloads; only explicit review clears it. Missing/unavailable storage also blocks
+signing. A user can still approve incorrect public values; a review note is not
+proof of an independent investigation. Storage clearing, another browser origin
+or a compromised frontend can bypass this UI guard. The actual upgrade authority
+can still replace program code; this guard does not restrict its on-chain power.
+The fixed System Program address used as the local fixture's placeholder is not
+the future dedicated development key. No existing program was frozen/changed.
+A reviewed devnet record and the [real-wallet tests](real-wallet-test-plan.md)
+remain required. Mainnet remains excluded.

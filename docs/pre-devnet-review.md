@@ -14,8 +14,19 @@ The classical vault is NOT quantum-resistant.
 now specifies a separate dedicated development authority, its trust/custody/backup
 plan and required public-baseline signing hold. No key, address or on-chain
 authority was created or configured. Operator/backup choices, real-wallet tests
-and enforcement of the future devnet baseline remain open; the readiness decision
+and the future devnet deployment record remain open; the readiness decision
 below is unchanged.
+
+**Local testing follow-up:** the expected authority is now explicitly reviewed and
+persisted with its network/genesis, compiled program ID and deployment metadata.
+RPC failure/mismatch latches a reload-resistant signing hold; network refresh
+cannot approve a replacement. See [current validation](validation.md),
+[Windows instructions](windows-local-testing.md) and
+[real-wallet source evidence/manual NOT RUN record](real-wallet-test-plan.md).
+Agave's actual local loader uses a fixed System Program placeholder authority;
+previous references below to an immutable local loader were inaccurate. The
+helper now explicitly binds that known genesis recipe rather than auto-trusting
+an RPC authority. No devnet key, authority change or public deployment occurred.
 
 ## 1. Findings and fixes
 

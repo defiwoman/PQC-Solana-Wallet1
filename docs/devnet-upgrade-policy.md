@@ -175,15 +175,31 @@ The interface must:
    an authority mismatch. Even a planned upgrade with the same authority needs
    review of its new code/deployment metadata.
 
-**Current implementation versus proposal:** the local interface already displays
-validated observed authority metadata and pins it through a verified session and
-signing round. It does not yet have an approved persistent **devnet** authority
-baseline; explicit reverification can establish a new local session baseline.
-That is not sufficient to enforce this proposed devnet policy across reloads.
-Adding the reviewed public baseline, separation checks and persistent mismatch
-hold is a required later code/configuration task before devnet enablement. No
-frontend behavior is changed by this documentation commit. Public writes remain
-disabled.
+**Current local implementation:** the interface requires explicit operator approval
+of public baseline JSON and a review note. It persists the expected network/genesis,
+compiled program ID, loader, canonical ProgramData, deployment slot and authority
+in browser storage. RPC observations never establish or replace that expectation.
+Missing configuration, RPC verification failure or mismatched metadata blocks new
+signing. A mismatch/failure hold survives reload and even a later matching RPC;
+only explicit independent review can approve a replacement/clear the hold.
+Read-only investigation and pending-receipt reconciliation remain available.
+Initialization also rejects reuse of the expected upgrade authority as an owner.
+
+The local validator helper starts a fresh private genesis with the **explicit
+fixed System Program address** `11111111111111111111111111111111` as the loader's
+placeholder authority, canonical ProgramData and deployment slot zero. It checks
+that predetermined recipe before writing its public manifest. No private signing
+key is created for that placeholder. Agave 4.4.0 reports this address for the
+original `--bpf-program` recipe too; earlier descriptions of a legacy/immutable
+loader were inaccurate. The helper now states its actual expected account format
+explicitly. This is local test infrastructure, not the dedicated devnet key, a
+public deployment, a transfer of authority, or freezing an existing program.
+
+A reviewed **devnet** deployment record/key still does not exist; public-network
+writes remain disabled. Devnet configuration, code/binary review and real-wallet
+tests remain separate gates. See [local validation](validation.md),
+[the Windows guide](windows-local-testing.md) and
+[the manual NOT RUN record](real-wallet-test-plan.md).
 
 A frontend hold does not freeze the on-chain program, revoke an upgrade key or
 stop external clients/the authority holder. It protects this interface from
@@ -210,7 +226,7 @@ The proposed role and trust model are documented, but these decisions remain:
 - Decide who reviews normal/emergency upgrades and how approval/evidence is
   recorded. The proposed single-key authority provides no on-chain quorum or
   timelock; procedural review is not cryptographic enforcement.
-- Complete the public devnet deployment record, baseline/mismatch-hold code review,
+- Complete the public devnet deployment record, review of the implemented local baseline/mismatch hold for a devnet configuration,
   and required real-wallet/device tests from the pre-devnet review.
 
 Mainnet, real funds, authority reassignment and making the program immutable

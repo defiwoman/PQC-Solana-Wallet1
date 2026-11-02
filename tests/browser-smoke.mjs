@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Connection, Keypair, Transaction } from '@solana/web3.js';
+import { Connection, Keypair, Transaction, PublicKey } from '@solana/web3.js';
 import { verifyLocalNetwork, initializeInstruction, depositInstruction, proposalInstruction, approvalInstruction,
-  loadSnapshot, submitInstructions, vaultAddress, parseU64 } from '../packages/sdk/dist/interface.js';
+  loadSnapshot, submitInstructions, vaultAddress, UPGRADEABLE_LOADER } from '../packages/sdk/dist/interface.js';
 
 // Development-only external-wallet substitutes for SETUP in Node memory. No
 // private key, seed, wallet fixture or signing service is injected into Chromium.
@@ -87,11 +87,22 @@ try {
   await waitFor("document.body.innerText.includes('Experimental classical multisig — local/devnet only.')");
   await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Verify local network').click()");
   await waitFor("document.body.innerText.includes('Verified local validator')");
+  // Approval input is a PUBLIC manifest from the operator-owned local fixture,
+  // never an authority copied from the RPC display or a private-key fixture.
+  const baseline = JSON.parse(await readFile(resolve('target/local-authority-baseline.json'), 'utf8'));
+  assert.equal(baseline.expectedAuthority, '11111111111111111111111111111111');
+  assert.equal(baseline.genesisHash, network.genesis);
+  await evaluate(`(() => { const area = document.querySelector('textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(area, ${JSON.stringify(JSON.stringify(baseline))}); area.dispatchEvent(new Event('input', { bubbles: true })); const note = [...document.querySelectorAll('label')].find(l => l.textContent.startsWith('Baseline review note')).querySelector('input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(note, 'Automated review of my owned local fixture'); note.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('input[type=checkbox]').click(); })()`);
+  await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Approve reviewed baseline').click()");
+  await waitFor("document.querySelector('dl').textContent.includes('Program ID') && !!localStorage.getItem('pqc-vault.approved-authority.v1')");
+  await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Verify local network').click()");
+  await waitFor("document.body.innerText.includes('Verified local validator') && !document.body.innerText.includes('New signing blocked.')");
+
   await evaluate(`(() => { const input = [...document.querySelectorAll('label')].find(l => l.textContent.startsWith('Vault address')).querySelector('input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input, ${JSON.stringify(address)}); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Load vault').click()");
   await waitFor(`document.body.innerText.includes('${snapshot.vault.balance} lamports') && document.body.innerText.includes('1 of 3 · 2 required')`);
-  const state = await evaluate(`({ text: document.body.innerText, executeDisabled: [...document.querySelectorAll('button')].find(b => b.textContent === 'Execute proposal 0').disabled, stored: localStorage.length + sessionStorage.length })`);
-  assert(state.executeDisabled); assert.equal(state.stored, 0); assert(state.text.includes(snapshot.proposals[0].recipient));
+  const state = await evaluate(`({ text: document.body.innerText, executeDisabled: [...document.querySelectorAll('button')].find(b => b.textContent === 'Execute proposal 0').disabled, storedPending: localStorage.getItem('pqc-vault.public-pending.v1'), baselineStored: !!localStorage.getItem('pqc-vault.approved-authority.v1') })`);
+  assert(state.executeDisabled); assert.equal(state.storedPending, null); assert(state.baselineStored); assert(state.text.includes(snapshot.proposals[0].recipient));
   await call('Page.captureScreenshot', { format: 'png' }, sessionId).then(result => writeFile(`${output}/page.png`, Buffer.from(result.data, 'base64')));
   // Only PUBLIC receipt metadata enters the browser, never the Node fixture keys.
   await evaluate(`localStorage.setItem('pqc-vault.public-pending.v1', ${JSON.stringify(JSON.stringify(latestReceipt))})`);
@@ -102,14 +113,37 @@ try {
   assert(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Review initialization').disabled"));
   await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Check transaction confirmation').click()");
   await waitFor("document.body.innerText.includes('CONFIRMED')");
-  assert.equal(await evaluate('localStorage.length'), 0);
+  assert.equal(await evaluate("localStorage.getItem('pqc-vault.public-pending.v1')"), null);
+  assert(await evaluate("!!localStorage.getItem('pqc-vault.approved-authority.v1')"));
   assert.equal(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Review initialization').disabled"), false);
+  // Deliberately wrong PUBLIC expectation; no authority is changed on-chain.
+  const wrongBaseline = { ...baseline, loader: 'upgradeable', expectedAuthority: owners[0].publicKey.toBase58(),
+    programData: PublicKey.findProgramAddressSync([new PublicKey(baseline.programId).toBuffer()], UPGRADEABLE_LOADER)[0].toBase58(), deploymentSlot: '1' };
+  await evaluate(`(() => { const area = document.querySelector('textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(area, ${JSON.stringify(JSON.stringify(wrongBaseline))}); area.dispatchEvent(new Event('input',{bubbles:true})); const note = [...document.querySelectorAll('label')].find(l => l.textContent.startsWith('Baseline review note')).querySelector('input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(note,'Deliberately wrong expectation for automated mismatch regression'); note.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('input[type=checkbox]').click(); })()`);
+  await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Approve reviewed baseline').click()");
+  await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Verify local network').click()");
+  await waitFor("document.body.innerText.includes('New signing blocked.')");
+  await call('Page.reload', {}, sessionId);
+  await waitFor("document.body.innerText.includes('New signing blocked.')");
+  await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Verify local network').click()");
+  await waitFor("document.body.innerText.includes('Verified local validator')");
+  assert(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Review initialization').disabled"));
+  // Investigation remains read-only: a hold must not hide real account data.
+  await evaluate(`(() => { const input = [...document.querySelectorAll('label')].find(l => l.textContent.startsWith('Vault address')).querySelector('input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input, ${JSON.stringify(address)}); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Load vault').click()");
+  await waitFor(`document.body.innerText.includes('${snapshot.vault.balance} lamports')`);
+  await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Refresh actual account state').click()");
+  await waitFor("![...document.querySelectorAll('button')].find(b => b.textContent === 'Refresh actual account state').disabled");
+  assert(await evaluate("document.body.innerText.includes('New signing blocked.')"));
+  assert(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Execute proposal 0').disabled"));
+  const persisted = await evaluate("JSON.parse(localStorage.getItem('pqc-vault.approved-authority.v1')).baseline.expectedAuthority");
+  assert.equal(persisted, wrongBaseline.expectedAuthority, 'RPC-reported authority must never overwrite the expectation');
   await evaluate("(() => { const input = [...document.querySelectorAll('label')].find(l => l.textContent.startsWith('Local RPC URL')).querySelector('input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'https://api.mainnet-beta.solana.com'); input.dispatchEvent(new Event('input', {bubbles:true})); })()");
   await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent === 'Verify local network').click()");
   await waitFor("document.body.innerText.includes('Wrong network')");
   assert.deepEqual(exceptions, [], 'Production page must not throw browser exceptions');
-  await writeFile(`${output}/result.json`, JSON.stringify({ passed: true, programUnchanged: true, address, balance: snapshot.vault.balance.toString(), approvals: 1, actualRPC: true, pendingReceiptReloadChecked: true, browser: 'system Chromium', externalWalletExtensionTested: false }, null, 2));
-  console.log('PASS: production Chromium page read the actual local vault balance and proposal; one-vote execution disabled; public receipt survived reload and was reconciled; wrong-network URL rejected.');
+  await writeFile(`${output}/result.json`, JSON.stringify({ passed: true, programUnchanged: true, address, balance: snapshot.vault.balance.toString(), approvals: 1, actualRPC: true, pendingReceiptReloadChecked: true, expectedAuthoritySurvivedReload: true, authorityMismatchHeldAfterReload: true, readOnlyDuringHold: true, browser: 'system Chromium', externalWalletExtensionTested: false }, null, 2));
+  console.log('PASS: production Chromium page read the actual local vault balance and proposal; one-vote execution disabled; public receipt survived reload and was reconciled; authority expectation and mismatch hold persisted while read-only inspection worked; wrong-network URL rejected.');
   console.log('External wallet extensions were not automated; initialization signing was exercised with Node-only development fixtures.');
 } finally {
   socket?.close();

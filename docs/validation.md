@@ -1,3 +1,67 @@
+# Persistent authority baseline and local-wallet preparation — 3 November 2026
+
+Continued `feature/classical-vault` from clean, remotely verified commit
+`01dc5eeb7fab4c2e0964bcc4f91920660e46ec96`. Existing Rust, accounts, custody,
+three-signature initialization and two-of-three enforcement are preserved.
+No dependency or lockfile changed. No devnet upgrade key, public deployment,
+authority change, merge or mainnet action occurred.
+
+## Commands actually run and results
+
+| Command/check | Actual result |
+| --- | --- |
+| Git branch/status/history and remote comparison | Existing branch preserved; local/remote starting commit matched |
+| `npm run test:validator` | **21 passed, zero failures/skips**, compiled SBF program executing on a fresh private Agave validator; includes real approval/execution/replay, concurrency, rent/arithmetic and rollback cases |
+| `npm test` | **36 passed, zero failures/skips**; SDK/DOM/signing fixtures, including explicit baseline approval, reload, persistent mismatch, authority replacement/removal, same-authority redeployment, RPC outage/recovery and incorrect network/program/ProgramData configuration |
+| `npm run build` | SDK, TypeScript and React production bundle passed |
+| `npm run validator:local` | Program build passed. Initial new manifest verification correctly refused an incorrect legacy/no-authority expectation; no manifest was published. This startup attempt is **not** counted as a passing fixture check |
+| Public account inspection; `solana-test-validator --help` | Agave 4.4.0 actually reports the upgradeable loader, canonical ProgramData, slot zero and System Program address as the default local authority placeholder, including when `none` is passed; earlier immutable-loader wording was incorrect |
+| `node scripts/local-validator.mjs` after correcting the explicit genesis recipe | Passed startup/recipe verification; helper printed/wrote only the public expected manifest, with the fixed System Program placeholder explicitly configured rather than adopting an arbitrary RPC authority |
+| `npm run preview --workspace @pqc-wallet/web` | Served production build internally on port 4173 for Chromium testing; no public preview URL |
+| `npm run test:browser` | **Passed** with actual local program accounts in Chromium 154: actual 11726080-lamport balance, one approval cannot execute, public receipt reload/reconciliation, explicit baseline approval/persistence, mismatch hold after reload/reverification, unchanged expected value, read-only investigation during a hold and mainnet URL rejection |
+| Initial `npm run test:browser` before manifest correction | **Failed** with ENOENT for the absent manifest; not counted as passed. Corrected fixture and reran successfully |
+| Official source/documentation inspection | Reviewed pinned Backpack official source, Phantom SDK README, Microsoft WSL source, Anchor 1.2.2 Windows/WSL guidance and official tool distributions; see linked evidence below |
+| `git diff --check` and local Markdown link-target check | Passed |
+| Source/ABI and SBF comparison | Rust/IDL/Cargo/Anchor files unchanged; wallet.so SHA-256 remains `f5cf87dbbd607aaa9d32670312eeaa889fe98256cf79349629fe2f98e96961ce` |
+
+The program integration tests execute transactions on the validator. Unit/DOM
+RPC and wallet responses are fixtures. Chromium reads real accounts and tests
+public browser state; transaction setup uses disposable signing keys **only in
+Node memory**. No wallet/private key/signing service was injected into Chromium.
+**No installed extension or physical device signed during these checks.**
+
+Evidence: ignored `target/local-baseline-validator.log`, `target/authority-tests.log`,
+`target/authority-build.log`, `target/authority-browser.log`,
+`target/authority-local-fixture.log`, `target/interface-browser-smoke/result.json`
+and `target/validator-runs/1793656575547-53101`. Generated ledgers, browser profiles,
+keys and logs are not committed. Reproducible test source is committed.
+
+## Versions, warnings and unperformed checks
+
+Retained Node 24.19.0/npm 11.9.0, Rust/Cargo 1.99.1, Anchor 1.2.2,
+cargo-build-sbf 4.5.0/platform-tools v1.57 (Solana Rust 1.95.0), Agave 4.4.0,
+TypeScript 7.0.2, React 19.3.1, Vite 8.3.5, web3.js 1.98.4 and Chromium 154.
+The fs/process browser-externalization and approximately 737 kB JavaScript chunk
+warnings remain: read-only Chromium runs without uncaught browser exceptions;
+external-wallet signing still needs manual verification. Bundle size is a loading
+cost, not proof of an authorization bypass. See the earlier review's warning
+classification; no warning was suppressed to obtain a passing build.
+
+The saved public expectation is never filled from observed RPC metadata. An
+explicit operator review is needed, including after a mismatch/outage hold.
+A hold guards this frontend only; it cannot prevent an actual upgrade authority
+replacing the program. Public writes remain disabled and devnet readiness remains
+**NOT READY** pending real-wallet tests and a reviewed public devnet record.
+
+- [Windows/WSL walkthrough](windows-local-testing.md): installation and laptop commands **NOT RUN** on Windows by the agent.
+- [Official wallet evidence and manual test plan](real-wallet-test-plan.md): current released extension compatibility, actual partial signing/account switching and independent devices **NOT RUN**.
+- [Upgrade policy](devnet-upgrade-policy.md): dedicated development key, operator choice and durable encrypted backup **NOT CREATED/NOT CONFIGURED**.
+- No new host Rust test/check was run for this frontend/configuration-only change; SBF build and actual validator tests were run.
+
+Earlier results below are historical and describe their original versions.
+
+---
+
 # Pre-devnet review validation — 3 November 2026
 
 See [the review](pre-devnet-review.md) for findings, fixes, warning classifications,
