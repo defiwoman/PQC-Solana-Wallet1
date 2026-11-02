@@ -2,9 +2,11 @@
 
 ## What you have
 
-An experimental project foundation: an empty Anchor program, a small TypeScript
-SDK containing public status data, and a React status page. It cannot hold or
-transfer funds. The initial classical vault is NOT quantum-resistant.
+An experimental classical 2-of-3 SOL vault, a typed TypeScript SDK, and a React
+status page. The compiled program supports local SOL transfers after two distinct
+approvals; the interface has no wallet connection or transfer controls.
+Experimental classical multisig — local/devnet only.
+The initial classical vault is NOT quantum-resistant.
 The README is preserved as the original project plan.
 
 ## Frontend: quickest start
@@ -20,8 +22,8 @@ npm run dev
 ```
 
 `npm ci` installs the versions in the lockfile. `build` checks TypeScript, emits
-the SDK's JavaScript/types, and bundles the web page. `test` runs three scaffold
-tests, including rendering the interface. `dev` builds the SDK and serves the
+the SDK's JavaScript/types, and bundles the web page. `test` runs SDK/UI unit checks, including rendering the interface; these do not
+execute a Solana program. `dev` builds the SDK and serves the
 React page on port **5173**. Leave that terminal running; Ctrl+C stops it.
 On your own computer, open `http://localhost:5173` in a browser. If port 5173 is
 occupied, stop your earlier server or choose another port intentionally.
@@ -69,7 +71,9 @@ The program build script pins **platform-tools v1.57**, which Anchor 1.2.2 uses
 by default. These tools include their own **Rust 1.95.0** compiler for Solana;
 the host Rust pin remains 1.99.1. Platform tools are downloaded on the first
 Solana build. An SBF compiler builds programs; it is not a validator or deployment.
-The full Solana/Agave CLI is not installed or needed for this status page.
+The full **Agave 4.4.0** CLI and local validator were also installed for Stage A
+from its official GitHub release after verifying the published SHA-256. They are
+not needed just to view the status page.
 
 Then, from the repository root:
 
@@ -80,13 +84,16 @@ npm run build:program
 ```
 
 The first command checks a host build. The second currently runs **zero Rust
-unit/doc tests**, because no instructions exist. A successful zero-test run is
-not wallet validation. The last command requires the separate Solana SBF build
+unit/doc tests**; the meaningful program coverage is in the separate validator
+suite below. A successful zero-test run is not wallet validation. The last command requires the separate Solana SBF build
 helper and platform tools, and generates an Anchor IDL as well as a Solana binary.
 The combined script runs `build:program:sbf` and `build:program:idl` separately so
 Cargo's `--locked` option reaches the correct process in each command. Outputs
 are `target/deploy/wallet.so`, `target/wallet.json`, and `target/wallet.ts`.
-The IDL is a machine-readable program interface; it has zero instructions here.
+The IDL is a machine-readable program interface with five Stage A instructions.
+The build copies its public JSON and TypeScript type into
+`packages/sdk/src/generated`; keep these public files synchronized and tracked.
+The generated types contain no signing keys.
 See `docs/validation.md` for the actual results from this session.
 
 Anchor can generate `target/deploy/wallet-keypair.json` for a local program
@@ -97,8 +104,57 @@ it has generated a fresh local program key, then rerun checks. This changes publ
 address configuration; it does not deploy anything. Never copy a production key
 or share a recovery phrase to make a scaffold build pass.
 
-No local validator, devnet deployment, or mainnet command is required for the
-status page. No program has been deployed by this work.
+## Real local-validator tests
+
+Install Agave 4.4.0 through its [official release](https://github.com/anza-xyz/agave/releases/tag/v4.4.0)
+and verify the archive's published SHA-256 before extracting. Add its `bin` folder
+to PATH. In this cloud session, after activating Rust above:
+
+```sh
+export PATH="/workspace/wallet-toolchain/agave-v4.4.0/solana-release/bin:$PATH"
+solana-test-validator --version
+npm run test:validator
+```
+
+This single command builds the actual program, rebuilds the SDK, launches its own
+validator on loopback, loads the compiled binary into that local genesis, and
+runs signed-transaction integration tests. It does not use your Solana config,
+read your wallet, connect to public RPC, or run an external deployment. Test keys
+are newly generated in memory; local airdrops have no real value. Let it finish
+before closing the terminal. No wallet recovery phrase is needed.
+
+Logs and the temporary validator ledger are kept under ignored
+`target/validator-runs/<run-id>`. The runner stops only the validator it started.
+If the validator binary is absent, startup fails; tests are not silently skipped.
+Direct command execution may require the cloud client's supported sandbox
+escalation because native executables and loopback sockets are restricted.
+
+The suite includes valid flows, missing/duplicate signers, each owner pair,
+unauthorized and repeat approvals, recipient/amount/cross-vault substitution,
+expiry, replay, insufficient funds, rent reserves, u64 boundaries, and atomic
+rollback. A public genesis fixture sets the canonical vault nonce to u64::MAX
+so overflow can be tested without creating 2^64 proposals; another fixture has
+intentionally wrong account ownership. These fixtures contain no signing keys
+and are not production initialization paths.
+
+Only local genesis loading was used. Nothing was deployed to devnet or mainnet.
+The status page still requires no validator.
+
+## Calling the local program
+
+Import `createWalletClient`, `vaultAddress`, `proposalAddress` and `u64LE` from
+`@pqc-wallet/sdk/client`. The generated client's methods are `initializeVault`,
+`deposit`, `createProposal`, `approve`, and `executeTransfer`. Read the actual
+transactions in `tests/integration/vault.test.ts` as local examples.
+
+Use bigint or Anchor BN for u64 values, not floating-point SOL or rounded numbers.
+Amounts are integer **lamports** (1 SOL = 1,000,000,000 lamports). Initialization
+needs signatures from all three authorization keys. Proposals start with zero
+approvals; any two owners must approve in separate or combined transactions.
+Execution is permissionless after approval but cannot change the recipient or
+amount. The expiry slot itself is expired. Rent cannot be withdrawn, and proposal
+accounts remain after execution. Read `architecture.md` before changing custody
+or transfer logic.
 
 ## Version sources and compatibility
 

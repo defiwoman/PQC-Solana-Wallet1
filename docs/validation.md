@@ -1,4 +1,120 @@
-# Validation record — 2 November 2026
+# Stage A validation — 2 November 2026
+
+## Branch and preservation
+
+`feature/wallet-foundation` was verified against GitHub at
+`43263b2b4d5ac21435006a826b0e32c245c7cf05`. The working tree was clean.
+`feature/classical-vault` did not exist locally or remotely and was created from
+that foundation, not from the README-only main branch. The README, original root
+frontend and legacy program remain unchanged. No reset, merge, environment
+publication or external deployment was performed.
+
+## Program and test environment
+
+The Rust/Anchor/frontend toolchain remains pinned to the foundation versions.
+Added Anchor TypeScript client **1.2.2** and its compatible web3.js **1.98.4**
+(v1 is required by this Anchor client), with exact direct pins and a real updated
+npm lockfile. Rust dependencies and Cargo.lock were unchanged.
+
+Installed **solana-test-validator 4.4.0**, source `9ef63128`, from the official
+[Agave release](https://github.com/anza-xyz/agave/releases/tag/v4.4.0).
+The downloaded Linux x86_64 archive was verified against its published SHA-256:
+`3363f4728fe786ac7036e342a20df928aa2e3e43f807fbdce67814840538c574`.
+GitHub API access returned a policy denial; the official GitHub release page and
+asset downloads worked. No network-policy workaround or verification bypass was
+used. The existing SBF helper is 4.5.0, with platform-tools v1.57/Rust 1.95.0;
+host Rust/Cargo remain 1.99.1.
+
+## Actual commands and results
+
+| Command | Final observed result |
+| --- | --- |
+| `git ls-remote origin refs/heads/feature/wallet-foundation refs/heads/feature/classical-vault` and `git fetch origin feature/wallet-foundation` | Verified the pushed foundation and absence of the new branch |
+| `git switch -c feature/classical-vault feature/wallet-foundation` | Created from the verified foundation commit |
+| `npm install` with exact `@anchor-lang/core@1.2.2` and `@solana/web3.js@1.98.4` | Registry downloads succeeded; SDK dependencies and root test dev dependencies recorded in package-lock.json |
+| `cargo check --locked -p wallet` / `npm run check:program` | Host compilation passed |
+| `npm run build:program` | Actual SBF build, Anchor IDL generation and SDK IDL synchronization passed; also run by the validator command |
+| `npm run test:validator` | **17 passed, 0 failed, 0 skipped, 0 cancelled; exit 0**. Executed the compiled program on a fresh local validator; final duration about 72 seconds |
+| `npm run build` | SDK JavaScript/types, TypeScript checks including integration-test source, and React production build passed |
+| `npm test` | **5 passed, 0 failed/skipped**, covering SDK boundaries/address derivation and status/UI rendering; these are separate from program execution |
+| `rustup component add rustfmt --toolchain 1.99.1` and `cargo fmt --all` | Installed the matching formatter and formatted only the active Rust workspace |
+| `cargo fmt --all -- --check` | Passed |
+| `git diff --check` | Passed |
+| Compare original files to `feature/wallet-foundation` | README, original root frontend and legacy program unchanged |
+| Compare built IDL to SDK public IDL | Byte-for-byte match; five instructions present |
+
+The final compiled `target/deploy/wallet.so` is 179,264 bytes, SHA-256
+`f5cf87dbbd607aaa9d32670312eeaa889fe98256cf79349629fe2f98e96961ce`.
+The program ID remains `5cLePo1rLF2qCp7Y9B6JByZjrtosDBYBtfBqv8tCjQSm`.
+The validator loads this binary at local genesis and verifies it is executable.
+No external program deployment command was used.
+
+## Integration coverage
+
+The 17 real-ledger tests cover:
+
+- Initialization with all three distinct signing keys and exact rent funding;
+  deposits increase the vault by the exact integer lamports.
+- Duplicate owners and each missing initialization signer rejected on-chain.
+- Noncanonical vault PDA and a wrong-owner account rejected.
+- Proposer/payer get zero approvals, including when an owner is simultaneously
+  proposer, rent payer and transaction fee payer; zero/one approval cannot spend.
+- All three possible two-owner combinations spend the correct amount.
+- Duplicate, unauthorized and unsigned approval rejected.
+- Unauthorized proposal creation rejected without advancing the nonce or leaving
+  the proposal account allocated.
+- Recipient/amount substitution, cross-vault use, expiry and replay rejected.
+- Consumed proposals persist; their rent stays funded; same-nonce reuse fails.
+- Insufficient funds, u64 maximum transfer amount, deposit overflow, zero amounts,
+  skipped nonce, exhausted u64 nonce and rent reserve enforcement.
+- Spending exactly the deposited amount leaves the vault's rent reserve intact.
+- New-recipient rent enforcement and rejection of program-owned recipients.
+- Failed execution preserves vault/recipient balances and full account data.
+- A valid execution followed by a failing instruction in the same transaction
+  rolls back balances and the consumed marker; the proposal can then execute once.
+
+Expected errors are transactions confirmed in the validator ledger; the harness
+asserts program error logs. Signature-privilege tests remove the signer privilege
+as well as omitting the signature, so they execute the program's rejection path
+instead of stopping only in the client serializer. Transaction uniqueness is
+ensured by a varying compute-budget instruction so replay attempts are submitted
+as new transactions rather than returned as cached transaction signatures.
+
+A public canonical genesis fixture sets `next_nonce = u64::MAX` to test overflow
+without billions of transactions; another fixture deliberately has the wrong
+account owner. Neither fixture represents a successful initialization path or
+contains signing keys. All successful normal vault flows initialize via the real
+three-signature program instruction.
+
+Final detailed evidence is retained locally in ignored
+`target/stage-a-validator-final.log` and
+`target/validator-runs/1793636209998-29404/validator.log` plus its local ledger.
+These generated logs/ledgers are not committed; the reproducible tests are.
+
+## Diagnosed failures and unresolved limits
+
+The initial validator run completed all 17 test bodies but hung during shutdown
+because web3.js kept a WebSocket reconnect loop alive. That run was interrupted
+and is **not** counted as a completed pass. Confirmation was changed to HTTP
+status polling; the final runner terminated its own validator cleanly and exited
+0 with 17/17 passing. The earlier compile used an older CpiContext constructor
+shape; it was corrected to Anchor 1.2.2's program-ID argument before SBF testing.
+
+Installation emitted an upstream `uuid@8.3.2` deprecation warning in the supported
+Anchor/web3.js dependency graph. It remains locked; web3.js v3 was not substituted
+for Anchor's required v1 API. This warning is not a failing integration check.
+
+No independent audit, public devnet/mainnet deployment, hardware-wallet testing,
+formal verification, browser signing-flow testing, PQC verification or production
+safety claim is supplied. The UI is a status page. There are no Rust unit tests;
+program behavior was tested by the separate validator suite, not a zero-test host
+run. Key-generation/storage independence cannot be verified on-chain. Proposal
+rent remains locked because closure/cleanup is deliberately not implemented.
+The initial classical vault is NOT quantum-resistant.
+
+---
+
+# Historical foundation validation — 2 November 2026
 
 ## Environment and scope
 

@@ -2,7 +2,7 @@
 
 ## Scope
 
-This is an experimental Solana wallet foundation for local development and
+This is an experimental classical Solana vault for local development and
 Solana devnet only. The initial classical vault is NOT quantum-resistant.
 Do not imply that naming the project PQC provides quantum resistance.
 
@@ -11,8 +11,10 @@ Stages, in order:
 2. Research and measure actual on-chain PQC verification.
 3. Add mandatory on-chain PQC authorization only if feasibility passes.
 
-This branch contains a scaffold only. Do not add fund transfers, custody, signing,
-wallet connection, deployment, or PQC as part of scaffold maintenance.
+Stage A implements only initialization, deposits, immutable proposals, approvals,
+and 2-of-3 SOL execution. Do not add tokens, swaps, recovery, owner rotation,
+arbitrary instruction execution, PQC, account closure, or external deployment.
+Keep the UI label "Experimental classical multisig — local/devnet only."
 Never request or commit a real recovery phrase, private key, or production secret.
 
 ## Layout and preservation
@@ -37,7 +39,10 @@ From the repository root:
 - `npm run build`: SDK build, TypeScript checks, and React production bundle.
 - `npm test`: TypeScript scaffold tests, including server rendering of the UI.
 - `npm run check:program`: host Rust compile check.
-- `npm run test:program`: host Rust tests; currently zero tests, not vault coverage.
+- `npm run test:program`: host Rust tests; not validator integration coverage.
+- `npm run test:validator`: builds and runs the actual program on a private local
+  solana-test-validator; requires the executable on PATH. Never replace this with
+  mocks or connect this runner to an external network.
 - `npm run build:program`: Solana-target build and Anchor IDL generation; requires
   `cargo-build-sbf` and its platform tools.
 
